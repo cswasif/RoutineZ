@@ -6,7 +6,7 @@ import './App.css'; // Assuming shared styles
 import { Link } from 'react-router-dom'; // Import Link for navigation
 import { formatTime12Hour } from './App';
 
-const API_BASE = "http://localhost:5000/api";
+const API_BASE = "/api";
 
 function SectionStatusPage() {
   const [courses, setCourses] = useState([]);
