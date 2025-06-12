@@ -693,10 +693,46 @@ const MakeRoutinePage = () => {
   // Function to handle PNG download
   const handleDownloadPNG = () => {
     if (routineGridRef.current) {
-      html2canvas(routineGridRef.current, { scale: 2 }).then(canvas => {
+      const element = routineGridRef.current;
+      
+      // Create a temporary container with white background
+      const tempContainer = document.createElement('div');
+      tempContainer.style.position = 'absolute';
+      tempContainer.style.left = '-9999px';
+      tempContainer.style.background = '#ffffff';
+      tempContainer.style.padding = '20px';
+      
+      // Clone the element and its children
+      const clone = element.cloneNode(true);
+      tempContainer.appendChild(clone);
+      document.body.appendChild(tempContainer);
+
+      // Set options for better quality and full capture
+      const options = {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        logging: false,
+        windowWidth: element.scrollWidth,
+        windowHeight: element.scrollHeight,
+        useCORS: true,
+        allowTaint: true,
+        onclone: (clonedDoc) => {
+          const clonedElement = clonedDoc.querySelector('[data-routine-grid]');
+          if (clonedElement) {
+            clonedElement.style.width = `${element.scrollWidth}px`;
+            clonedElement.style.height = `${element.scrollHeight}px`;
+          }
+        }
+      };
+
+      html2canvas(tempContainer, options).then(canvas => {
+        // Remove the temporary container
+        document.body.removeChild(tempContainer);
+
+        // Create download link
         const link = document.createElement('a');
         link.download = 'routine.png';
-        link.href = canvas.toDataURL('image/png');
+        link.href = canvas.toDataURL('image/png', 1.0);
         link.click();
       });
     }
@@ -1324,7 +1360,7 @@ const MakeRoutinePage = () => {
           )}
           <CampusDaysDisplay routine={routineResult} />
           {/* Routine Grid Container with Ref */}
-          <div ref={routineGridRef} style={{ marginTop: "20px" }}>
+          <div ref={routineGridRef} style={{ marginTop: "20px" }} data-routine-grid>
             {renderRoutineGrid(routineResult, routineDays.map(d => d.value))}
           </div>
           
@@ -2040,10 +2076,46 @@ function App() {
   // Function to handle PNG download
   const handleDownloadPNG = () => {
     if (routineGridRef.current) {
-      html2canvas(routineGridRef.current, { scale: 2 }).then(canvas => {
+      const element = routineGridRef.current;
+      
+      // Create a temporary container with white background
+      const tempContainer = document.createElement('div');
+      tempContainer.style.position = 'absolute';
+      tempContainer.style.left = '-9999px';
+      tempContainer.style.background = '#ffffff';
+      tempContainer.style.padding = '20px';
+      
+      // Clone the element and its children
+      const clone = element.cloneNode(true);
+      tempContainer.appendChild(clone);
+      document.body.appendChild(tempContainer);
+
+      // Set options for better quality and full capture
+      const options = {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        logging: false,
+        windowWidth: element.scrollWidth,
+        windowHeight: element.scrollHeight,
+        useCORS: true,
+        allowTaint: true,
+        onclone: (clonedDoc) => {
+          const clonedElement = clonedDoc.querySelector('[data-routine-grid]');
+          if (clonedElement) {
+            clonedElement.style.width = `${element.scrollWidth}px`;
+            clonedElement.style.height = `${element.scrollHeight}px`;
+          }
+        }
+      };
+
+      html2canvas(tempContainer, options).then(canvas => {
+        // Remove the temporary container
+        document.body.removeChild(tempContainer);
+
+        // Create download link
         const link = document.createElement('a');
         link.download = 'routine.png';
-        link.href = canvas.toDataURL('image/png');
+        link.href = canvas.toDataURL('image/png', 1.0);
         link.click();
       });
     }
