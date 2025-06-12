@@ -65,9 +65,6 @@ def load_data():
         abort(503, description=f"Failed to load data: {e}")
 
 
-# Initialize data when app starts
-initialize_data()
-
 # Add at the top of usis.py
 BD_TIMEZONE = pytz.timezone("Asia/Dhaka")
 
