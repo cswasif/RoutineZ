@@ -25,17 +25,35 @@ CORS(app)
 @app.route("/api/connapi-status")
 def check_connapi_status():
     try:
-        response = requests.get("https://connapi.vercel.app/raw-schedule", timeout=30)  # Increased timeout to 30 seconds
+        response = requests.get("https://connapi.vercel.app/raw-schedule", timeout=30)
+        response.raise_for_status()  # This will raise an exception for HTTP errors
         data = response.json()
+        
         return jsonify({
-            "cached": data.get("cached", True)
+            "status": "online",
+            "cached": data.get("cached", True),
+            "message": "API is online and responding"
         })
-    except Exception as e:
+    except requests.exceptions.Timeout:
+        return jsonify({
+            "status": "error",
+            "cached": True,
+            "error": "Connection timed out. Please try again later."
+        }), 503
+    except requests.exceptions.RequestException as e:
         print(f"Error checking ConnAPI status: {e}")
         return jsonify({
+            "status": "error",
             "cached": True,
-            "error": str(e)
-        })
+            "error": "Unable to connect to the API. Please try again later."
+        }), 503
+    except Exception as e:
+        print(f"Unexpected error checking ConnAPI status: {e}")
+        return jsonify({
+            "status": "error",
+            "cached": True,
+            "error": "An unexpected error occurred. Please try again later."
+        }), 503
 
 @app.route("/api/test")
 def test():
@@ -45,6 +63,9 @@ def test():
 def get_courses():
     try:
         data = load_data()  # Load data directly in the route
+        if data is None:
+            return jsonify({"error": "Failed to load course data. Please try again later."}), 503
+            
         courses_data = {}
         for section in data:
             code = section.get("courseCode")
@@ -57,7 +78,7 @@ def get_courses():
         return jsonify(courses_list)
     except Exception as e:
         print(f"Error in /api/courses: {e}")
-        abort(503, description=f"Failed to process courses data: {e}")
+        return jsonify({"error": "Failed to process courses data. Please try again later."}), 503
 
 
 # Load environment variables
@@ -66,35 +87,75 @@ if not GOOGLE_API_KEY:
     print("Warning: GOOGLE_API_KEY environment variable is not set")
 
 # Configure Gemini API
+gemini_configured = False
 try:
     import google.generativeai as genai
-
     genai.configure(api_key=GOOGLE_API_KEY)
-    print("Gemini API configured.")
+    gemini_configured = True
+    print("Gemini API configured successfully.")
+except ImportError:
+    print("Warning: google.generativeai package not installed. AI features will be disabled.")
 except Exception as e:
     print(f"Failed to configure Gemini API: {e}")
+
+def check_ai_availability():
+    """Check if AI features are available."""
+    if not GOOGLE_API_KEY:
+        return False, "Google API key not configured"
+    if not gemini_configured:
+        return False, "Gemini API not properly configured"
+    return True, "AI features available"
 
 # Initialize data as None
 data = None
 
-
 def load_data():
-    global data  # Add global keyword to modify the global variable
+    global data
+    if data is None:
+        try:
             DATA_URL = "https://connapi.vercel.app/raw-schedule"
-    try:
-        response = requests.get(DATA_URL, timeout=30)  # Increased timeout to 30 seconds
+            print(f"\nLoading data from {DATA_URL}...")
+            
+            # Add retry logic
+            max_retries = 3
+            retry_delay = 2  # seconds
+            
+            for attempt in range(max_retries):
+                try:
+                    print(f"Attempt {attempt + 1}/{max_retries}...")
+                    response = requests.get(DATA_URL, timeout=30)  # Increased timeout
                     response.raise_for_status()
                     raw_json = response.json()
+                    
+                    # Use only the 'data' key from the response
                     if isinstance(raw_json, dict) and "data" in raw_json:
-            data = raw_json["data"]  # Store in global variable
+                        data = raw_json["data"]
+                    else:
+                        print(f"Warning: Expected dict with 'data' key, got {type(raw_json)}")
+                        continue
+                    
                     if not isinstance(data, list):
-                raise ValueError("Expected 'data' to be a list")
+                        print(f"Warning: Expected list data, got {type(data)}")
+                        continue
+                    
+                    print(f"Successfully loaded {len(data)} sections")
                     return data
-        else:
-            raise ValueError("Response JSON missing 'data' key")
+                    
+                except (requests.exceptions.RequestException, json.JSONDecodeError) as e:
+                    print(f"Error on attempt {attempt + 1}: {e}")
+                    if attempt < max_retries - 1:
+                        print(f"Retrying in {retry_delay} seconds...")
+                        time.sleep(retry_delay)
+                    continue
+            
+            print("All retry attempts failed")
+            return None
+            
         except Exception as e:
-        print(f"Error loading data: {e}")
-        abort(503, description=f"Failed to load data: {e}")
+            print(f"Critical error in load_data: {e}")
+            return None
+    
+    return data
 
 
 # Add at the top of usis.py
@@ -1217,6 +1278,14 @@ def generate_routine():
         print(f"Selected times: {selected_times}")
         print(f"Course-faculty pairs: {json.dumps(course_faculty_pairs, indent=2)}")
         print(f"Using AI: {use_ai}")
+
+        if use_ai:
+            ai_available, ai_message = check_ai_availability()
+            if not ai_available:
+                print(f"AI not available: {ai_message}")
+                return jsonify({
+                    "error": f"AI-powered routine generation is not available: {ai_message}. Please try without AI."
+                }), 503
 
         if not course_faculty_pairs:
             return jsonify({"error": "No courses selected"}), 200
