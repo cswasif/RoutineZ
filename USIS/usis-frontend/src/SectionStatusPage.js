@@ -5,8 +5,7 @@ import Select from "react-select";
 import './App.css'; // Assuming shared styles
 import { Link } from 'react-router-dom'; // Import Link for navigation
 import { formatTime12Hour } from './App';
-
-const API_BASE = "/api";
+import { API_BASE } from './config';
 
 function SectionStatusPage() {
   const [courses, setCourses] = useState([]);

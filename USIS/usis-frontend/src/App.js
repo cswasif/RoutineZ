@@ -7,8 +7,8 @@ import html2canvas from 'html2canvas';
 import AnimatedGridPattern from "./components/ui/animated-grid-pattern";
 import SeatStatusDialog from "./SeatStatusDialog";
 import { MessageCircle } from 'lucide-react';
-
-const API_BASE = "/api";
+import { API_BASE } from './config';
+import ApiStatus from './components/ApiStatus';
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const TIME_SLOTS = [
@@ -156,45 +156,50 @@ function renderRoutineGrid(sections, selectedDays) {
     }
   });
 
+  // Helper to format room display
+  const formatRoomDisplay = (entry) => {
+    // If it's a simple room string, just return it
+    if (typeof entry.room === 'string' && !entry.room.includes(';')) {
+      return entry.room;
+    }
+
+    // If the room contains day/time information, extract the room for the current day
+    const roomParts = entry.room.split(';').map(part => part.trim());
+    for (const part of roomParts) {
+      const dayMatch = part.toUpperCase().includes(entry.day.toUpperCase());
+      if (dayMatch) {
+        // Extract just the room number after the colon
+        const roomNumber = part.split(':').pop().trim();
+        return roomNumber;
+      }
+    }
+    return 'TBA'; // Fallback if no room found for current day
+  };
+
   return (
-    <table className="routine-table" style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 16 }}>
+    <table className="routine-table">
       <thead>
         <tr>
           <th>Time/Day</th>
-          {selectedDays.map(day => <th key={day}>{getAbbreviatedDay(day)}</th>)}
+          {selectedDays.map(day => <th key={day}>{day.substring(0, 3)}</th>)}
         </tr>
       </thead>
       <tbody>
         {TIME_SLOTS.map(slot => (
           <tr key={slot.value}>
-            <td><b>{slot.label}</b></td>
+            <td>{slot.value}</td>
             {selectedDays.map(day => (
               <td key={day}>
                 {grid[day][slot.value].map((entry, idx) => (
-                  <div key={idx} style={{
-                    marginBottom: 4,
-                    padding: '8px',
-                    backgroundColor: entry.type === 'lab' ? '#e3f2fd' : '#f5f5f5',
-                    borderRadius: '4px',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-                  }}>
-                    <div style={{ 
-                      fontWeight: 'bold',
-                      color: entry.type === 'lab' ? '#1976d2' : '#333'
-                    }}>
-                      {entry.type === "class" ? "Class" : "Lab"}: {entry.section.courseCode}
+                  <div key={idx} className={entry.type === "class" ? "class-block" : "lab-block"}>
+                    <div>
+                      <span>{entry.type === "class" ? "Class" : "Lab"}</span>
+                      {entry.section.courseCode}
                     </div>
-                    <div style={{ fontSize: '0.9em', marginTop: '4px' }}>
-                      {entry.section.sectionName && <span>Section: {entry.section.sectionName}<br /></span>}
-                      {entry.section.faculties && <span>Faculty: {entry.section.faculties}<br /></span>}
-                      {entry.room && <span>Room: {entry.room}<br /></span>}
-                      <div style={{ 
-                        marginTop: '4px',
-                        color: entry.type === 'lab' ? '#1976d2' : '#666',
-                        fontSize: '0.9em'
-                      }}>
-                        {entry.formattedTime}
-                      </div>
+                    <div style={{ fontSize: '12px', color: '#666' }}>
+                      {entry.section.sectionName && <div>Section: {entry.section.sectionName}</div>}
+                      {entry.section.faculties && <div>Faculty: {entry.section.faculties}</div>}
+                      {entry.room && <div>Room: {formatRoomDisplay(entry)}</div>}
                     </div>
                   </div>
                 ))}
@@ -2125,7 +2130,35 @@ function App() {
       />
       <div className="content-container">
         <div className="header">
-          <h1 className="usis-title">RoutinEZ</h1>
+          <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px' }}>
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center', 
+              marginBottom: '20px'
+            }}>
+              <h1 className="usis-title">RoutinEZ</h1>
+              <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                <ApiStatus />
+                {routineResult && (
+                  <button
+                    onClick={handleDownloadPNG}
+                    style={{
+                      backgroundColor: '#1976d2',
+                      color: 'white',
+                      padding: '8px 16px',
+                      borderRadius: '4px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontSize: '0.9em'
+                    }}
+                  >
+                    Download PNG
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
         <div className="flex justify-center mb-6">
           <SeatStatusDialog />

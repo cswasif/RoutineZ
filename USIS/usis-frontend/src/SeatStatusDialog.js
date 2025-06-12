@@ -12,8 +12,7 @@ import {
 import axios from 'axios';
 import { Button } from "./components/ui/button";
 import { formatTime12Hour } from './App';
-
-const API_BASE = '/api';
+import { API_BASE } from './config';
 
 const InfoMessage = ({ text }) => (
   <p className="mt-4 text-center text-sm text-muted-foreground">{text}</p>
