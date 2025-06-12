@@ -65,62 +65,6 @@ def load_data():
         abort(503, description=f"Failed to load data: {e}")
 
 
-def initialize_data():
-    global data
-    data = load_data()
-    if data:
-        print("\n=== Initializing Data ===")
-        # Count sections with exam data
-        sections_with_exams = 0
-        for section in data:
-            has_mid = bool(
-                section.get("midExamDate")
-                and section.get("midExamStartTime")
-                and section.get("midExamEndTime")
-            )
-            has_final = bool(
-                section.get("finalExamDate")
-                and section.get("finalExamStartTime")
-                and section.get("finalExamEndTime")
-            )
-            if has_mid or has_final:
-                sections_with_exams += 1
-
-        print(
-            f"Found {sections_with_exams} sections with exam data out of {len(data)} total sections"
-        )
-
-        # If no exam data found, initialize with example data
-        if sections_with_exams == 0:
-            print("No exam data found, initializing example exam data...")
-            for idx, section in enumerate(data):
-                # Initialize midterm exam data
-                if not (
-                    section.get("midExamDate")
-                    and section.get("midExamStartTime")
-                    and section.get("midExamEndTime")
-                ):
-                    section["midExamDate"] = f"2024-07-{10 + (idx % 10):02d}"
-                    section["midExamStartTime"] = "10:00:00"
-                    section["midExamEndTime"] = "12:00:00"
-                    print(f"Added midterm exam data for {section.get('courseCode')} Section {section.get('sectionName')}"
-                    )
-
-                # Initialize final exam data
-                if not (
-                    section.get("finalExamDate")
-                    and section.get("finalExamStartTime")
-                    and section.get("finalExamEndTime")
-                ):
-                    section["finalExamDate"] = f"2024-08-{20 + (idx % 10):02d}"
-                    section["finalExamStartTime"] = "14:00:00"
-                    section["finalExamEndTime"] = "16:00:00"
-                    print(f"Added final exam data for {section.get('courseCode')} Section {section.get('sectionName')}"
-                    )
-        else:
-            print("Exam data found in sections, no initialization needed")
-
-
 # Initialize data when app starts
 initialize_data()
 
@@ -556,23 +500,21 @@ def has_internal_conflicts(section):
 
 @app.route("/api/courses")
 def get_courses():
-    data = load_data()
-    # Get unique course codes and names, and calculate total available seats
-    courses_data = {}
-    for section in data:
-        code = section.get("courseCode")
-        name = section.get("courseName", code)
-        available_seats = section.get("capacity", 0) - section.get("consumedSeat", 0)
-
-        if code not in courses_data:
-            courses_data[code] = {"code": code, "name": name, "totalAvailableSeats": 0}
-
-        courses_data[code]["totalAvailableSeats"] += available_seats
-
-    # Convert dictionary to list of course objects
-    courses_list = list(courses_data.values())
-
-    return jsonify(courses_list)
+    try:
+        data = load_data()  # Load data directly in the route
+        courses_data = {}
+        for section in data:
+            code = section.get("courseCode")
+            name = section.get("courseName", code)
+            available_seats = section.get("capacity", 0) - section.get("consumedSeat", 0)
+            if code not in courses_data:
+                courses_data[code] = {"code": code, "name": name, "totalAvailableSeats": 0}
+            courses_data[code]["totalAvailableSeats"] += available_seats
+        courses_list = list(courses_data.values())
+        return jsonify(courses_list)
+    except Exception as e:
+        print(f"Error in /api/courses: {e}")
+        abort(503, description=f"Failed to process courses data: {e}")
 
 
 @app.route("/api/course_details")
