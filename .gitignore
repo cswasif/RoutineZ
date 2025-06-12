@@ -48,4 +48,18 @@ var/
 wheels/
 *.egg-info/
 .installed.cfg
-*.egg 
+*.egg
+
+# Environment files
+.env
+api/.env
+USIS/.env
+
+# Generated files
+act202_details.json
+schedule.json
+raw_schedule.json
+course_details.json
+
+# Duplicate files
+routinez_Latest/ 
