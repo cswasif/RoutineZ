@@ -1261,28 +1261,52 @@ def generate_routine():
         
         # Get request data
         request_data = request.get_json()
+        print("\n=== Request Data ===")
+        print("Raw request data:", request_data)
+        
         if not request_data:
             return jsonify({"error": "No data provided"}), 400
 
-        selected_courses = request_data.get("selectedCourses", [])
-        selected_days = request_data.get("selectedDays", [])
-        selected_times = request_data.get("selectedTimes", [])
-        generation_method = request_data.get("method", "manual")
-        commute_preference = request_data.get("commutePreference")
+        # Handle both old and new request formats
+        if "courses" in request_data:
+            # New format
+            print("\nProcessing new format...")
+            courses_data = request_data.get("courses", [])
+            print("Courses data:", courses_data)
+            selected_courses = []
+            for course in courses_data:
+                if isinstance(course, dict) and course.get("course"):
+                    selected_courses.append(course["course"])
+            selected_days = request_data.get("days", [])
+            selected_times = request_data.get("times", [])
+            generation_method = "ai" if request_data.get("useAI", False) else "manual"
+            commute_preference = request_data.get("commutePreference", "")
+        else:
+            # Old format
+            print("\nProcessing old format...")
+            selected_courses = request_data.get("selectedCourses", [])
+            selected_days = request_data.get("selectedDays", [])
+            selected_times = request_data.get("selectedTimes", [])
+            generation_method = request_data.get("method", "manual")
+            commute_preference = request_data.get("commutePreference", "")
+
+        print("\n=== Processed Data ===")
+        print("Selected courses:", selected_courses)
+        print("Selected days:", selected_days)
+        print("Selected times:", selected_times)
+        print("Generation method:", generation_method)
+        print("Commute preference:", commute_preference)
 
         if not selected_courses:
+            print("\n❌ No courses selected")
+            print("Selected courses array is empty:", selected_courses)
             return jsonify({"error": "No courses selected"}), 400
         if not selected_days:
+            print("\n❌ No days selected")
             return jsonify({"error": "No days selected"}), 400
         if not selected_times:
+            print("\n❌ No time slots selected")
             return jsonify({"error": "No time slots selected"}), 400
-
-        print("\n=== Input Parameters ===")
-        print("Selected Courses:", selected_courses)
-        print("Selected Days:", selected_days)
-        print("Selected Times:", selected_times)
-        print("Generation Method:", generation_method)
-        print("Commute Preference:", commute_preference)
 
         # Create course sections map using fresh data
         course_sections_map = {}
