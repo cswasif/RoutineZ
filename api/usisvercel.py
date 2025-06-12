@@ -11,16 +11,43 @@ import os
 from itertools import product
 import time
 
-# Only load dotenv locally (not on Vercel)
-if not os.environ.get("VERCEL"):
-    try:
-        from dotenv import load_dotenv
-        load_dotenv()
-    except ImportError:
-        pass
+print("\n=== Loading Environment Variables ===")
+# Get Google API key from environment variable
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
+if not GOOGLE_API_KEY:
+    print("Warning: GOOGLE_API_KEY environment variable is not set")
 
 app = Flask(__name__)
 CORS(app)
+
+# Configure Gemini API
+gemini_configured = False
+try:
+    print("\n=== Configuring Gemini API ===")
+    import google.generativeai as genai
+    genai.configure(api_key=GOOGLE_API_KEY)
+    # Create a single model instance to be reused
+    gemini_model = genai.GenerativeModel("gemini-pro")
+    print("Gemini API configured with shared model instance.")
+    gemini_configured = True
+    print("✓ Gemini API configured successfully")
+except ImportError:
+    print("✗ Warning: google.generativeai package not installed. AI features will be disabled.")
+except Exception as e:
+    print(f"✗ Failed to configure Gemini API: {e}")
+    gemini_model = None
+
+def check_ai_availability():
+    """Check if AI features are available."""
+    print("\n=== Checking AI Availability ===")
+    if not GOOGLE_API_KEY:
+        print("✗ Google API key not configured")
+        return False, "Google API key not configured"
+    if not gemini_configured:
+        print("✗ Gemini API not properly configured")
+        return False, "Gemini API not properly configured"
+    print("✓ AI features available")
+    return True, "AI features available"
 
 @app.route("/api/connapi-status")
 def check_connapi_status():
@@ -80,31 +107,6 @@ def get_courses():
         print(f"Error in /api/courses: {e}")
         return jsonify({"error": "Failed to process courses data. Please try again later."}), 503
 
-
-# Load environment variables
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
-if not GOOGLE_API_KEY:
-    print("Warning: GOOGLE_API_KEY environment variable is not set")
-
-# Configure Gemini API
-gemini_configured = False
-try:
-    import google.generativeai as genai
-    genai.configure(api_key=GOOGLE_API_KEY)
-    gemini_configured = True
-    print("Gemini API configured successfully.")
-except ImportError:
-    print("Warning: google.generativeai package not installed. AI features will be disabled.")
-except Exception as e:
-    print(f"Failed to configure Gemini API: {e}")
-
-def check_ai_availability():
-    """Check if AI features are available."""
-    if not GOOGLE_API_KEY:
-        return False, "Google API key not configured"
-    if not gemini_configured:
-        return False, "Gemini API not properly configured"
-    return True, "AI features available"
 
 # Initialize data as None
 data = None
@@ -200,36 +202,35 @@ class TimeUtils:
                     dt = datetime.strptime(tstr, "%I:%M %p")
                 except ValueError:
                     try:
-                        dt = datetime.strptime(tstr, "%I:%M:%S %p")
+                        dt = datetime.strptime(tstr, "%I %p")
                     except ValueError:
-                        tstr = re.sub(
-                            r"(\d{1,2})(?:\s*:\s*(\d{2}))?\s*(AM|PM)", r"\1:\2 \3", tstr
-                        )
-                        # Fix the string joining operation
-                        parts = tstr.replace(":", ":00:").split(":")
-                        tstr = ":".join(parts[0:2]) + " " + tstr.split()[-1]
-                        dt = datetime.strptime(tstr, "%I:%M %p")
+                        print(f"Warning: Could not parse time string: {tstr}")
+                        return 0
             else:
-                parts = tstr.split(":")
-                if len(parts) == 1:
-                    dt = datetime.strptime(f"{int(parts[0]):02d}:00:00", "%H:%M:%S")
-                elif len(parts) == 2:
-                    dt = datetime.strptime(
-                        f"{int(parts[0]):02d}:{int(parts[1]):02d}:00", "%H:%M:%S"
-                    )
-                else:
-                    dt = datetime.strptime(
-                        f"{int(parts[0]):02d}:{int(parts[1]):02d}:{int(parts[2]):02d}",
-                        "%H:%M:%S",
-                    )
+                try:
+                    dt = datetime.strptime(tstr, "%H:%M:%S")
+                except ValueError:
+                    try:
+                        dt = datetime.strptime(tstr, "%H:%M")
+                    except ValueError:
+                        print(f"Warning: Could not parse time string: {tstr}")
+                        return 0
 
-            minutes = dt.hour * 60 + dt.minute
-            print(f"Converted {tstr} to {minutes} minutes")
-            return minutes
-
+            return dt.hour * 60 + dt.minute
         except Exception as e:
-            print(f"Error in time_to_minutes: {tstr} - {e}")
+            print(f"Error converting time to minutes: {e}")
             return 0
+
+    @staticmethod
+    def minutes_to_time(minutes):
+        """Convert minutes to time string in 24-hour format (HH:MM:SS)."""
+        try:
+            hours = minutes // 60
+            mins = minutes % 60
+            return f"{hours:02d}:{mins:02d}:00"
+        except Exception as e:
+            print(f"Error converting minutes to time: {e}")
+            return "00:00:00"
 
 
 # Create an ExamConflictChecker class
@@ -1148,305 +1149,187 @@ def is_valid_combination(sections):
 
 
 def try_all_section_combinations(course_sections_map, selected_days, selected_times):
-    """
-    Try all possible combinations of sections for each course to find a valid routine.
-    Returns (best_routine, error_message) tuple.
-    """
-    print("\n=== Starting Routine Generation ===")
-
-    # First, check exam conflicts for all possible combinations before other
-    # validations
-    courses = list(course_sections_map.keys())
-    print(f"\nGenerating combinations for courses: {', '.join(courses)}")
-
-    all_section_combinations = list(
-        product(*[course_sections_map[course] for course in courses])
-    )
-    print(f"\nGenerated {len(all_section_combinations)} possible combinations")
-
-    # First pass: Check ONLY exam conflicts
-    print("\n=== PHASE 1: Checking Exam Conflicts ===")
-    valid_exam_combinations = []
-
-    for combination in all_section_combinations:
-        print(f"\nChecking combination:")
-        for section in combination:
-            print(
-                f"  {section.get('courseCode')} Section {section.get('sectionName')}"
-            )
-            print(
-                f"    Mid Exam: {section.get('midExamDate', 'N/A')} {section.get('midExamStartTime', 'N/A')}-{section.get('midExamEndTime', 'N/A')}"
-            )
-            print(
-                f"    Final Exam: {section.get('finalExamDate', 'N/A')} {section.get('finalExamStartTime', 'N/A')}-{section.get('finalExamEndTime', 'N/A')}"
-            )
-
-        has_exam_conflicts, exam_error = check_exam_compatibility(combination)
-        if has_exam_conflicts:
-            print(f"✗ Exam conflict found: {exam_error}")
-            continue
-        else:
-            print("✓ No exam conflicts found")
-            valid_exam_combinations.append(combination)
-
-    if not valid_exam_combinations:
-        error_msg = "No valid combinations found without exam conflicts.\n"
-        error_msg += "Please try different sections to avoid exam schedule conflicts."
-        print(f"\n✗ {error_msg}")
-        return None, error_msg
-
-    print(
-        f"\n✓ Found {len(valid_exam_combinations)} combinations without exam conflicts"
-    )
-
-    # Second pass: Check time and day constraints
-    print("\n=== PHASE 2: Checking Time and Day Constraints ===")
-    for combination in valid_exam_combinations:
-        print("\nTrying combination without exam conflicts:")
-        for section in combination:
-            print(
-                f"  {section.get('courseCode')} Section {section.get('sectionName')}"
-            )
-
-        # Check if all sections in this combination fit the selected days and
-        # times
-        all_sections_valid = True
-        for section in combination:
-            # Check times
-            valid, time_error = filter_section_by_time(section, selected_times)
-            if not valid:
-                print(
-                    f"✗ Invalid times for {section.get('courseCode')} Section {section.get('sectionName')}: {time_error}"
-                )
-                all_sections_valid = False
-                break
-
-            # Check days
-            section_days = set()
-            if section.get("sectionSchedule") and section["sectionSchedule"].get(
-                "classSchedules"
-            ):
-                section_days.update(
-                    schedule["day"].upper()
-                    for schedule in section["sectionSchedule"]["classSchedules"]
-                )
-            for lab in get_lab_schedules_flat(section):
-                section_days.add(lab["day"].upper())
-
-            if not all(
-                day in [d.upper() for d in selected_days] for day in section_days
-            ):
-                print(
-                    f"✗ Invalid days for {section.get('courseCode')} Section {section.get('sectionName')}"
-                )
-                all_sections_valid = False
-                break
-
-        if not all_sections_valid:
-            continue
-
-        # Finally check for schedule conflicts
-        if is_valid_combination(combination):
-            print("✓ Valid combination found!")
-            return list(combination), None
-        else:
-            print("✗ Schedule conflict found")
-
-    # If we get here, no valid combination was found
-    print("\n✗ No valid combination found")
-    return (
-        None,
-        "Could not find a valid combination without conflicts. Please try different sections or time slots.",
-    )
+    """Try all possible combinations of sections to find a valid routine."""
+    try:
+        print("\n=== Trying Section Combinations ===")
+        
+        # Get all possible combinations first
+        courses = list(course_sections_map.keys())
+        all_combinations = list(product(*[course_sections_map[course] for course in courses]))
+        print(f"Generated {len(all_combinations)} possible combinations")
+        
+        # Convert selected times to minutes for easier comparison
+        time_ranges = []
+        for time_slot in selected_times:
+            start, end = time_slot.split("-")
+            start_mins = TimeUtils.time_to_minutes(start.strip())
+            end_mins = TimeUtils.time_to_minutes(end.strip())
+            time_ranges.append((start_mins, end_mins))
+            
+        print(f"\nSelected time ranges:")
+        for start, end in time_ranges:
+            print(f"• {TimeUtils.minutes_to_time(start)} - {TimeUtils.minutes_to_time(end)}")
+            
+        # Iterate through combinations
+        print("\nChecking combinations for conflicts...")
+        for idx, combination in enumerate(all_combinations, 1):
+            print(f"\nTrying combination {idx}/{len(all_combinations)}")
+            
+            # Check if all sections are within selected days and times
+            valid = True
+            conflicts = []
+            
+            for section in combination:
+                course_code = section.get("courseCode")
+                section_name = section.get("sectionName")
+                print(f"\nChecking {course_code} Section {section_name}")
+                
+                # Check class schedules
+                if section.get("sectionSchedule"):
+                    for schedule in section["sectionSchedule"].get("classSchedules", []):
+                        day = schedule.get("day", "").upper()
+                        if day not in selected_days:
+                            print(f"❌ Class day {day} not in selected days")
+                            valid = False
+                            conflicts.append(f"{course_code} requires {day}")
+                            continue
+                            
+                        start_time = TimeUtils.time_to_minutes(schedule.get("startTime", ""))
+                        end_time = TimeUtils.time_to_minutes(schedule.get("endTime", ""))
+                        
+                        # Check if class time is within any selected time slot
+                        time_valid = False
+                        for time_start, time_end in time_ranges:
+                            if start_time >= time_start and end_time <= time_end:
+                                time_valid = True
+                                break
+                                
+                        if not time_valid:
+                            print(f"❌ Class time {schedule.get('startTime')} - {schedule.get('endTime')} outside selected times")
+                            valid = False
+                            conflicts.append(f"{course_code} time conflict")
+                            
+                # Check lab schedules using the normalized helper function
+                for lab in get_lab_schedules_flat(section):
+                    day = lab.get("day", "").upper()
+                    if day not in selected_days:
+                        print(f"❌ Lab day {day} not in selected days")
+                        valid = False
+                        conflicts.append(f"{course_code} Lab requires {day}")
+                        continue
+                        
+                    start_time = TimeUtils.time_to_minutes(lab.get("startTime", ""))
+                    end_time = TimeUtils.time_to_minutes(lab.get("endTime", ""))
+                    
+                    # Check if lab time is within any selected time slot
+                    time_valid = False
+                    for time_start, time_end in time_ranges:
+                        if start_time >= time_start and end_time <= time_end:
+                            time_valid = True
+                            break
+                            
+                    if not time_valid:
+                        print(f"❌ Lab time {lab.get('startTime')} - {lab.get('endTime')} outside selected times")
+                        valid = False
+                        conflicts.append(f"{course_code} Lab time conflict")
+            
+            if valid:
+                print("\n✅ Found valid combination!")
+                return combination, None
+                
+            print(f"\nConflicts in combination {idx}:")
+            for conflict in conflicts:
+                print(f"• {conflict}")
+                
+        print("\n❌ No valid combination found")
+        return None, "Could not find a valid combination without conflicts. Please try different sections or time slots."
+        
+    except Exception as e:
+        print(f"\n❌ Error finding combinations: {e}")
+        return None, f"Error finding valid combinations: {e}"
 
 
 @app.route("/api/routine", methods=["POST"])
 def generate_routine():
+    """Generate a routine based on selected courses and preferences."""
     try:
-        print("\n=== Starting Routine Generation Request ===")
-        data = request.get_json()
+        # Load fresh data for each routine generation request
+        print("\n=== Loading Fresh Course Data ===")
+        fresh_data = load_data()  # Get fresh data from the API
+        if not fresh_data:
+            return jsonify({"error": "Failed to load current course data"}), 503
         
-        # Extract parameters
-        course_faculty_pairs = data.get("courses", [])
-        selected_days = [day.upper() for day in data.get("days", [])]
-        selected_times = data.get("times", [])
-        use_ai = data.get("useAI", False)
-        commute_preference = data.get("commutePreference", "")
+        # Get request data
+        request_data = request.get_json()
+        if not request_data:
+            return jsonify({"error": "No data provided"}), 400
 
-        print("\n=== Request Parameters ===")
-        print(f"Selected days: {selected_days}")
-        print(f"Selected times: {selected_times}")
-        print(f"Course-faculty pairs: {json.dumps(course_faculty_pairs, indent=2)}")
-        print(f"Using AI: {use_ai}")
+        selected_courses = request_data.get("selectedCourses", [])
+        selected_days = request_data.get("selectedDays", [])
+        selected_times = request_data.get("selectedTimes", [])
+        generation_method = request_data.get("method", "manual")
+        commute_preference = request_data.get("commutePreference")
 
-        if use_ai:
-            ai_available, ai_message = check_ai_availability()
-            if not ai_available:
-                print(f"AI not available: {ai_message}")
-                return jsonify({
-                    "error": f"AI-powered routine generation is not available: {ai_message}. Please try without AI."
-                }), 503
-
-        if not course_faculty_pairs:
-            return jsonify({"error": "No courses selected"}), 200
-
+        if not selected_courses:
+            return jsonify({"error": "No courses selected"}), 400
         if not selected_days:
-            return jsonify({"error": "No days selected"}), 200
-
+            return jsonify({"error": "No days selected"}), 400
         if not selected_times:
-            return jsonify({"error": "No time slots selected"}), 200
+            return jsonify({"error": "No time slots selected"}), 400
 
-        # Load and verify data
-        print("\n=== Loading Data ===")
-        data = load_data()
-        if not data:
-            return jsonify({"error": "Failed to load course data"}), 200
+        print("\n=== Input Parameters ===")
+        print("Selected Courses:", selected_courses)
+        print("Selected Days:", selected_days)
+        print("Selected Times:", selected_times)
+        print("Generation Method:", generation_method)
+        print("Commute Preference:", commute_preference)
 
-        # Build candidate sections map
-        print("\n=== Building Course Sections Map ===")
+        # Create course sections map using fresh data
         course_sections_map = {}
-
-        for pair in course_faculty_pairs:
-            course_code = pair.get("course")
-            if not course_code:
-                return jsonify({"error": "Invalid course data received"}), 200
-
-            faculty_list = pair.get("faculty", [])
-            selected_sections = pair.get("sections", {})
-
-            print(f"\nProcessing {course_code}:")
-            print(f"  Selected faculty: {faculty_list}")
-            print(f"  Selected sections: {selected_sections}")
-
-            # Get all sections for this course
-            course_sections = [
-                section
-                for section in data
-                if section.get("courseCode", "").upper() == course_code.upper()
-            ]
-
-            print(f"  Found {len(course_sections)} total sections")
-
-            if not course_sections:
-                return jsonify({"error": f"No sections found for {course_code}"}), 200
-
-            # Filter by faculty and handle optional sections
-            if faculty_list:
-                filtered_sections = []
-                for faculty in faculty_list:
-                    print(f"  Filtering for faculty: {faculty}")
-                    # Get all sections for this faculty
-                    faculty_sections = [
-                        section
-                        for section in course_sections
-                        if section.get("faculties", "").upper() == faculty.upper()
-                    ]
-
-                    # If specific section is selected for this faculty, use
-                    # only that section
-                    if faculty in selected_sections and selected_sections[faculty]:
-                        specific_sections = [
-                            section
-                            for section in faculty_sections
-                            if str(section.get("sectionName"))
-                            == str(selected_sections[faculty])
-                        ]
-                        if specific_sections:
-                            print(
-                                f"    Using selected section {selected_sections[faculty]}"
-                            )
-                            filtered_sections.extend(specific_sections)
-                        else:
-                            print(
-                                f"    Selected section {selected_sections[faculty]} not found"
-                            )
-                            filtered_sections.extend(faculty_sections)
-                    else:
-                        print(f"    Using all sections for faculty")
-                        filtered_sections.extend(faculty_sections)
-
-                if filtered_sections:
-                    course_sections = filtered_sections
-                    print(f"  Filtered to {len(course_sections)} sections")
-                else:
-                    return (
-                        jsonify(
-                            {
-                                "error": f"No sections found for {course_code} with selected faculty"
-                            }
-                        ),
-                        200,
-                    )
-
-            # Filter sections by available seats
-            sections_with_seats = []
-            for section in course_sections:
-                available_seats = section.get("capacity", 0) - section.get(
-                    "consumedSeat", 0
-                )
-                if available_seats > 0:
-                    print(
-                        f"  Section {section.get('sectionName')} has {available_seats} seats available"
-                    )
-                    sections_with_seats.append(section)
-
-            if not sections_with_seats:
+        for course_code in selected_courses:
+            sections = []
+            for section in fresh_data:  # Use fresh_data instead of global data
+                if section.get("courseCode") == course_code:
+                    sections.append(section)
+            if sections:
+                course_sections_map[course_code] = sections
+            else:
                 return (
                     jsonify(
-                        {
-                            "error": f"No sections with available seats found for {course_code}"
-                        }
+                        {"error": f"No sections found for course {course_code}"}
                     ),
-                    200,
+                    404,
                 )
 
-            course_sections_map[course_code] = sections_with_seats
-            print(
-                f"Added {len(sections_with_seats)} sections for {course_code} to course_sections_map"
-            )
+        print("\n=== Found Sections ===")
+        for course, sections in course_sections_map.items():
+            print(f"{course}: {len(sections)} sections")
 
-        # First check for exam conflicts across all selected sections
-        print("\n=== Checking Exam Conflicts ===")
-        all_selected_sections = {}
-        for course_code, sections in course_sections_map.items():
-            for section in sections:
-                # Use sectionId to ensure uniqueness
-                all_selected_sections[section.get("sectionId")] = section
-
-        # Convert the dictionary values (unique sections) back to a list
-        unique_selected_sections = list(all_selected_sections.values())
-
-        exam_conflicts = []
-        for i in range(len(unique_selected_sections)):
-            section1 = unique_selected_sections[i]
-            for j in range(i + 1, len(unique_selected_sections)):
-                section2 = unique_selected_sections[j]
-                conflicts = check_exam_conflicts(section1, section2)
-                if conflicts:
-                    exam_conflicts.extend(conflicts)
-
-        if exam_conflicts:
-            error_msg = format_exam_conflicts_message(exam_conflicts)
-            print(f"\n✗ Found exam conflicts:\n{error_msg}")
-            return jsonify({"error": error_msg}), 200
-
-        # If no exam conflicts, proceed with routine generation
-        if use_ai:
+        # Try AI generation first if selected
+        if generation_method == "ai":
+            print("\n=== Attempting AI Generation ===")
             result = try_ai_routine_generation(
                 course_sections_map, selected_days, selected_times, commute_preference
             )
-            # If routine generated, add AI feedback
-            if result[1] == 200 and result[0].json.get("routine"):
-                routine = result[0].json["routine"]
-                feedback = get_routine_feedback_for_api(routine, commute_preference)
-                result[0].json["feedback"] = feedback
+            if isinstance(result, tuple):
+                return result
+            if not result.get("error"):
+                print("✓ AI generation successful")
+                return jsonify(result)
+            print("✗ AI generation failed, falling back to manual")
+
+        # Fall back to manual generation
+        print("\n=== Attempting Manual Generation ===")
+        result = try_manual_routine_generation(
+            course_sections_map, selected_days, selected_times
+        )
+        if isinstance(result, tuple):
             return result
-        else:
-            result = try_manual_routine_generation(
-                course_sections_map, selected_days, selected_times
-            )
-            # Do NOT add AI feedback for manual routine
-            return result
+        if result.get("error"):
+            print(f"✗ Manual generation failed: {result['error']}")
+            return jsonify(result), 200
+        print("✓ Manual generation successful")
+        return jsonify(result)
 
     except Exception as e:
         print(f"Error in generate_routine: {e}")
@@ -1464,6 +1347,22 @@ def try_manual_routine_generation(course_sections_map, selected_days, selected_t
             product(*[course_sections_map[course] for course in courses])
         )
         print(f"Generated {len(all_combinations)} possible combinations")
+
+        # Skip exam conflict check as requested
+        # print("\n=== STEP 1: Checking Exam Conflicts ===")
+        # combinations_without_exam_conflicts = []
+        # for combination in all_combinations:
+        #     has_exam_conflicts, exam_error = check_exam_compatibility(combination)
+        #     if has_exam_conflicts:
+        #         continue # Skip combinations with exam conflicts
+        #     combinations_without_exam_conflicts.append(combination)
+
+        # if not combinations_without_exam_conflicts:
+        #     error_msg = "All possible combinations have exam conflicts.\n"
+        #     error_msg += ("Please try different sections to avoid exam schedule conflicts.")
+        #     return jsonify({"error": error_msg}), 200
+
+        # print(f"\nFound {len(combinations_without_exam_conflicts)} combinations without exam conflicts")
 
         # Proceed directly to time and day constraints
         print("=== STEP 1 (was STEP 2): Checking Time and Day Constraints ===")
@@ -1511,21 +1410,18 @@ def try_manual_routine_generation(course_sections_map, selected_days, selected_t
             if not all_sections_valid:
                 continue
 
-            # STEP 3: Check schedule conflicts
+            # Check schedule conflicts
             if is_valid_combination(combination):
                 print("✓ Valid combination found!")
-                # Format schedules before returning
-                for section in combination:
-                    format_section_times(section)
                 return jsonify({"routine": combination}), 200
             else:
                 print("✗ Schedule conflict found")
 
-        print("✗ No valid combination found")
+        print("\n✗ No valid combination found")
         return (
             jsonify(
                 {
-                    "error": "Could not find a valid combination. Please check your selected time slots and days."
+                    "error": "Could not find a valid combination without conflicts. Please try different sections or time slots."
                 }
             ),
             200,
@@ -1534,7 +1430,11 @@ def try_manual_routine_generation(course_sections_map, selected_days, selected_t
     except Exception as e:
         print(f"Error in manual routine generation: {e}")
         return (
-            jsonify({"error": "Error generating routine manually. Please try again."}),
+            jsonify(
+                {
+                    "error": "An error occurred during manual routine generation. Please try again."
+                }
+            ),
             200,
         )
 
@@ -1583,7 +1483,7 @@ def ask_ai():
         return jsonify({"answer": "Please provide a question."}), 400
 
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash-001")
+        model = genai.GenerativeModel("gemini-pro")  # Changed to experimental model
 
         # Create a context-aware prompt
         prompt = (
@@ -1646,7 +1546,7 @@ def get_routine_feedback_ai():
             "Start with 'Score: X/10'"
         )
 
-        model = genai.GenerativeModel("gemini-1.5-flash-001")
+        model = genai.GenerativeModel("gemini-pro")  # Changed to experimental model
         response = model.generate_content(prompt)
         feedback = response.text.strip()
 
@@ -1700,7 +1600,7 @@ def check_exam_conflicts_ai():
                 "Start with 'Score: 10/10' if there are no conflicts."
             )
 
-            model = genai.GenerativeModel("gemini-1.5-flash-001")
+            model = genai.GenerativeModel("gemini-pro")  # Changed to experimental model
             response = model.generate_content(prompt)
             analysis = response.text.strip()
 
@@ -1726,7 +1626,7 @@ def check_exam_conflicts_ai():
                 "Start with 'Score: X/10'"
             )
 
-            model = genai.GenerativeModel("gemini-1.5-flash-001")
+            model = genai.GenerativeModel("gemini-pro")  # Changed to experimental model
             response = model.generate_content(prompt)
             analysis = response.text.strip()
 
@@ -1856,18 +1756,17 @@ def check_time_conflicts_ai():
 
         if not time_conflicts:
             prompt = (
-                f"Check this routine for time conflicts:\n{json.dumps(routine)}\n\n"
-                "First, rate the time schedule out of 10.\n"
-                "Then tell me in 2-3 points:\n"
-                "• Any class/lab overlaps?\n"
+                "Analyze this schedule for time management:\n"
                 "• Any gaps in your schedule?\n"
                 "Keep it casual and under 10 words per point.\n"
                 "Start with 'Score: X/10'"
             )
 
-            model = genai.GenerativeModel("gemini-1.5-flash-001")
-            response = model.generate_content(prompt)
-            analysis = response.text.strip()
+            if gemini_model:
+                response = gemini_model.generate_content(prompt)
+                analysis = response.text.strip()
+            else:
+                analysis = "AI analysis unavailable"
 
             return jsonify({"has_conflicts": False, "analysis": analysis}), 200
         else:
@@ -1889,9 +1788,11 @@ def check_time_conflicts_ai():
                 "Start with 'Score: X/10'"
             )
 
-            model = genai.GenerativeModel("gemini-1.5-flash-001")
-            response = model.generate_content(prompt)
-            analysis = response.text.strip()
+            if gemini_model:
+                response = gemini_model.generate_content(prompt)
+                analysis = response.text.strip()
+            else:
+                analysis = "AI analysis unavailable"
 
             return (
                 jsonify(
@@ -1937,30 +1838,312 @@ def get_exam_schedule():
     return jsonify({"error": "Section not found"}), 404
 
 
-def try_ai_routine_generation(
-    course_sections_map, selected_days, selected_times, commute_preference
-):
+def try_ai_routine_generation(course_sections_map, selected_days, selected_times, commute_preference):
     """AI-assisted routine generation using Gemini AI."""
     try:
+        # Generate commute preference text at the very beginning
+        if commute_preference.lower() == "far":
+            commute_text = "Student lives FAR from campus. Prefer fewer campus days (more compact schedule)."
+        elif commute_preference.lower() == "near":
+            commute_text = "Student lives NEAR campus. Prefer more spread out schedule (more campus days is fine)."
+        else:
+            commute_text = "No commute preference specified. Balance schedule as needed."
+
         print("\n=== AI Routine Generation with Gemini ===")
 
-        # Try all combinations first
-        result = try_all_section_combinations(course_sections_map, selected_days, selected_times)
-        if not result or not result[0]:
-            return result
+        # Debug print the input data
+        print("\nDEBUG: Input Data:")
+        print("course_sections_map:", type(course_sections_map))
+        for course, sections in course_sections_map.items():
+            print(f"\n{course}:")
+            for section in sections:
+                print(f"  Section type: {type(section)}")
+                print(f"  Section data: {section}")
+        print("\nselected_days:", selected_days)
+        print("selected_times:", selected_times)
+        print("commute_preference:", commute_preference)
+        print("commute_text:", commute_text)  # Add debug print for commute_text
 
-        routine = result[0]
+        # Get all possible combinations first
+        courses = list(course_sections_map.keys())
+        all_combinations = list(
+            product(*[course_sections_map[course] for course in courses])
+        )
+        print(f"\nGenerated {len(all_combinations)} possible combinations")
         
-        # Format times in the response before returning
-        if isinstance(routine, list):
-            for section in routine:
-                format_section_times(section)
-        
-        return jsonify({"routine": routine}), 200
+        # Debug print first combination
+        if all_combinations:
+            print("\nDEBUG: First combination:")
+            for section in all_combinations[0]:
+                print(f"  Section type: {type(section)}")
+                print(f"  Section data: {section}")
+
+        # STEP 1: Check exam conflicts FIRST
+        print("\n=== STEP 1: Checking Exam Conflicts ===")
+        valid_combinations = []
+        for combination in all_combinations:
+            print("\nChecking combination for exam conflicts:")
+            for section in combination:
+                print(
+                    f"  {section.get('courseCode')} Section {section.get('sectionName')}"
+                )
+                print(
+                    f"    Mid Exam: {section.get('midExamDate', 'N/A')} at {section.get('midExamStartTime', 'N/A')}-{section.get('midExamEndTime', 'N/A')}"
+                )
+                print(
+                    f"    Final Exam: {section.get('finalExamDate', 'N/A')} at {section.get('finalExamStartTime', 'N/A')}-{section.get('finalExamEndTime', 'N/A')}"
+                )
+
+            has_exam_conflicts, exam_error = check_exam_compatibility(combination)
+            if has_exam_conflicts:
+                print(f"✗ Exam conflict found: {exam_error}")
+                # Return the specific exam error message
+                return {"error": exam_error}, 200
+
+            print("✓ No exam conflicts found")
+
+            # STEP 2: Check time and day constraints
+            all_sections_valid = True
+            for section in combination:
+                # Check times
+                valid, time_error = filter_section_by_time(section, selected_times)
+                if not valid:
+                    print(f"✗ Invalid times: {time_error}")
+                    all_sections_valid = False
+                    break
+
+                # Check days
+                section_days = set()
+                if section.get("sectionSchedule") and section["sectionSchedule"].get(
+                    "classSchedules"
+                ):
+                    section_days.update(
+                        schedule["day"].upper()
+                        for schedule in section["sectionSchedule"]["classSchedules"]
+                    )
+                for lab in get_lab_schedules_flat(section):
+                    section_days.add(lab["day"].upper())
+
+                if not all(
+                    day in [d.upper() for d in selected_days] for day in section_days
+                ):
+                    print("✗ Invalid days")
+                    all_sections_valid = False
+                    break
+
+            if not all_sections_valid:
+                continue
+
+            # STEP 3: Check schedule conflicts
+            if is_valid_combination(combination):
+                print("✓ Valid combination found!")
+                valid_combinations.append(combination)
+            else:
+                print("✗ Schedule conflict found")
+
+        if not valid_combinations:
+            print("\n✗ No valid combinations found")
+            return {
+                "error": "Could not find a valid combination. Please check your selected time slots and days."
+            }, 200
+
+        # Calculate campus days for each combination
+        combinations_with_days = []
+        print("\n=== Campus Days Analysis ===")
+        for idx, combination in enumerate(valid_combinations):
+            days_count, days_list = calculate_campus_days(combination)
+            print(f"\nCombination {idx}:")
+            print(f"  Total campus days: {days_count}")
+            print(f"  Days required: {', '.join(days_list)}")
+
+            combo_info = {
+                "id": idx,
+                "campus_days": days_count,
+                "days_list": days_list,
+                "combination": combination,
+            }
+            combinations_with_days.append(combo_info)
+
+        # Sort combinations based on commute preference
+        if commute_preference == "far":
+            # For "Live Far", sort by ascending campus days (fewer days is better)
+            combinations_with_days.sort(key=lambda x: x["campus_days"])
+        else:
+            # For "Live Near" or no preference, sort by descending campus days (more days is better)
+            combinations_with_days.sort(key=lambda x: x["campus_days"], reverse=True)
+
+        # Get the best campus days count
+        best_days_count = combinations_with_days[0]["campus_days"]
+
+        # Find all combinations that tie for the best campus days count
+        tied_combinations = [
+            combo
+            for combo in combinations_with_days
+            if combo["campus_days"] == best_days_count
+        ]
+
+        if len(tied_combinations) == 1:
+            # No ties, use the best combination directly
+            best_combination = tied_combinations[0]["combination"]
+            print(f"\n✓ Selected combination with {best_days_count} campus days")
+            return {"routine": best_combination}, 200
+        else:
+            # We have ties, use Gemini to break them
+            print(f"\nFound {len(tied_combinations)} combinations tied at {best_days_count} campus days")
+            print("Using Gemini to break the tie...")
+
+            # Format combinations for Gemini
+            formatted_combinations = []
+            for combo in tied_combinations:
+                combo_info = {
+                    "id": combo["id"],
+                    "campus_days": combo["campus_days"],
+                    "days_list": combo["days_list"],
+                    "courses": [],
+                }
+
+                for section in combo["combination"]:
+                    course_info = {
+                        "courseCode": section.get("courseCode"),
+                        "section": section.get("sectionName"),
+                        "schedules": [],
+                    }
+
+                    # Add class schedules
+                    if section.get("sectionSchedule") and section["sectionSchedule"].get("classSchedules"):
+                        for sched in section["sectionSchedule"]["classSchedules"]:
+                            if sched["day"].upper() in selected_days:
+                                course_info["schedules"].append(
+                                    {
+                                        "type": "class",
+                                        "day": sched["day"].upper(),
+                                        "time": f"{sched['startTime']} - {sched['endTime']}",
+                                    }
+                                )
+
+                    # Add lab schedules using the normalized helper function
+                    for lab in get_lab_schedules_flat(section):
+                        if lab["day"].upper() in selected_days:
+                            course_info["schedules"].append(
+                                {
+                                    "type": "lab",
+                                    "day": lab["day"].upper(),
+                                    "time": f"{lab['startTime']} - {lab['endTime']}",
+                                }
+                            )
+
+                    combo_info["courses"].append(course_info)
+                formatted_combinations.append(combo_info)
+
+            # First validate the number of combinations
+            if len(formatted_combinations) == 0:
+                print("\n⚠ No combinations to compare")
+                return {"error": "No valid combinations found"}, 200
+
+            max_id = len(formatted_combinations) - 1
+            
+            prompt = f"""
+You are a university schedule optimizer. Break a tie between {len(formatted_combinations)} schedules that all require {best_days_count} campus days.
+
+STUDENT PREFERENCE:
+{commute_text}
+
+WHAT MAKES A GOOD SCHEDULE:
+1. Fewer gaps between classes = better
+2. Classes in preferred time slots = better
+3. Balanced workload across days = better
+4. No back-to-back classes = better
+
+SCHEDULES TO COMPARE:
+{json.dumps(formatted_combinations, indent=2)}
+
+YOUR TASK:
+Pick the best schedule by comparing:
+- How many gaps between classes
+- How well they fit in preferred time slots
+- How balanced the workload is
+- How many back-to-back classes
+
+RESPOND WITH EXACTLY 3 LINES AND NO OTHER TEXT:
+BEST_ID: <A SINGLE INTEGER from 0 to {max_id} ONLY. This is the INDEX of the combination to choose.>
+SCORE: <give a score from 1 to 10>
+REASON: <one short sentence why this schedule is best>
+
+Example (if there were {len(formatted_combinations)} combinations, with max_id {max_id}):
+BEST_ID: {min(2, max_id)} # Example: pick 0, 1, or 2, but stay within the valid 0 to {max_id} range
+SCORE: 8
+REASON: This schedule has the fewest gaps and best fits preferred time slots.
+
+IMPORTANT: You MUST provide a valid BEST_ID integer between 0 and {max_id} (inclusive). Your response format MUST be exactly 3 lines: BEST_ID, SCORE, REASON.
+"""
+
+            try:
+                print("\nConsulting Gemini AI for tie-breaking...")
+                model = genai.GenerativeModel("gemini-pro")  # Changed to experimental model
+                response = model.generate_content(prompt)
+                ai_response = response.text.strip()
+
+                # Debug print the raw response
+                print("\n=== Gemini Raw Response ===")
+                print("Response type:", type(ai_response))
+                print("Response length:", len(ai_response))
+                print("Response content:")
+                print("---")
+                print(ai_response)
+                print("---")
+
+                # Debug print the response line by line
+                print("\n=== Response Line Analysis ===")
+                lines = ai_response.strip().split("\n")
+                for i, line in enumerate(lines):
+                    print(f"Line {i + 1}: '{line}'")
+
+                # Parse Gemini response with more robust validation
+                if len(lines) != 3:
+                    print(f"\n⚠ Invalid response format: expected 3 lines, got {len(lines)}")
+                    best_combination = tied_combinations[0]["combination"]
+                    print("Using first combination as fallback")
+                    return {"routine": best_combination}, 200
+
+                best_id_line = lines[0].strip()
+                if not best_id_line.startswith("BEST_ID:"):
+                    print("\n⚠ Invalid response format: missing BEST_ID")
+                    print(f"First line was: '{best_id_line}'")
+                    best_combination = tied_combinations[0]["combination"]
+                    print("Using first combination as fallback")
+                    return {"routine": best_combination}, 200
+
+                try:
+                    best_id = int(best_id_line.split(":")[1].strip())
+                    if not (0 <= best_id <= max_id):
+                        print(f"\n⚠ Invalid ID: {best_id} (must be between 0 and {max_id})")
+                        # Use modulo to wrap around to a valid index
+                        best_id = best_id % (max_id + 1)
+                        print(f"Wrapped around to valid index: {best_id}")
+
+                    best_combination = tied_combinations[best_id]["combination"]
+                    print(f"\n✓ Gemini selected combination {best_id}")
+                    print(f"AI Response:\n{ai_response}")
+                    return {"routine": best_combination}, 200
+                except ValueError as e:
+                    print(f"\n⚠ Could not parse ID from response: {e}")
+                    print(f"Problematic line: '{best_id_line}'")
+                    best_combination = tied_combinations[0]["combination"]
+                    print("Using first combination as fallback")
+                    return {"routine": best_combination}, 200
+
+            except Exception as e:
+                print(f"Error with Gemini AI: {e}")
+                best_combination = tied_combinations[0]["combination"]
+                print("\n⚠ Gemini error, using first combination")
+                return {"routine": best_combination}, 200
 
     except Exception as e:
         print(f"Error in AI routine generation: {e}")
-        return jsonify({"error": str(e)}), 500
+        print("\nDEBUG: Error occurred at:")
+        import traceback
+        traceback.print_exc()
+        return {"error": "Error generating routine with AI. Please try manual generation."}, 200
 
 
 def calculate_routine_score(
@@ -2064,21 +2247,22 @@ def calculate_routine_score(
     return score
 
 
-# Helper to get AI feedback for a routine
 def get_routine_feedback_for_api(routine, commute_preference=None):
+    """Generate AI feedback for a routine."""
     try:
-        import google.generativeai as genai
-
-        model = genai.GenerativeModel("gemini-1.5-flash-001")
+        print("\n=== Generating AI Feedback ===")
+        
         # Get the days used in the routine
         days_used = get_days_used_in_routine(routine)
         days_str = ", ".join(days_used)
         num_days = len(days_used)
+        
+        print(f"Routine spans {num_days} days: {days_str}")
+        
         commute_text = ""
         if commute_preference:
-            commute_text = (
-                f"The student's commute preference is '{commute_preference}'.\n"
-            )
+            print(f"Analyzing for commute preference: {commute_preference}")
+            commute_text = f"The student's commute preference is '{commute_preference}'.\n"
             if commute_preference.lower() == "far":
                 commute_text += (
                     "For 'Live Far', fewer days on campus is better. "
@@ -2098,10 +2282,6 @@ def get_routine_feedback_for_api(routine, commute_preference=None):
 
         prompt = (
             f"Look at this routine:\n{json.dumps(routine)}\n\n"
-            f"This routine requires being on campus for exactly {num_days} day(s): {days_str}.\n"
-            f"The student's commute preference is '{commute_preference}'.\n"
-            "When writing your feedback, always use the number of days provided above, and do not estimate or guess the number of days from the routine data.\n"
-            "Assume all classes and labs are in-person (physical) unless explicitly marked as 'Online'. Do NOT say 'It's all online!' or make assumptions about online/physical mode.\n"
             "First, rate this routine out of 10.\n"
             "Then give me 2-3 quick points about:\n"
             "• How's your schedule looking?\n"
@@ -2109,12 +2289,20 @@ def get_routine_feedback_for_api(routine, commute_preference=None):
             "Keep it casual and under 10 words per point.\n"
             "Start with 'Score: X/10'"
         )
-        response = model.generate_content(prompt)
-        feedback = response.text.strip()
+
+        print("\nGenerating feedback with Gemini...")
+        if gemini_model:
+            response = gemini_model.generate_content(prompt)
+            feedback = response.text.strip()
+        else:
+            feedback = "AI feedback unavailable"
+        print(f"\nAI Feedback:\n{feedback}")
+        
         return feedback
+        
     except Exception as e:
-        print(f"Gemini feedback error: {e}")
-        return f"Gemini error: {e}"
+        print(f"\n❌ Error generating AI feedback: {e}")
+        return "Unable to generate AI feedback at this time."
 
 
 def get_days_used_in_routine(routine):
@@ -2157,34 +2345,60 @@ def calculate_campus_days(combination):
     """Calculate the total number of unique days a student needs to be on campus."""
     days = set()
     for section in combination:
+        if not isinstance(section, dict):
+            print(f"WARNING: Invalid section type: {type(section)}")
+            continue
+
         # Check class schedules
-        if section.get("sectionSchedule") and section["sectionSchedule"].get(
-            "classSchedules"
-        ):
-            for schedule in section["sectionSchedule"]["classSchedules"]:
-                if schedule.get("day"):
-                    days.add(schedule["day"].upper())
+        section_schedule = section.get("sectionSchedule", {})
+        if isinstance(section_schedule, dict):
+            class_schedules = section_schedule.get("classSchedules", [])
+            if isinstance(class_schedules, list):
+                for schedule in class_schedules:
+                    if isinstance(schedule, dict) and schedule.get("day"):
+                        days.add(schedule["day"].upper())
 
-        # Check lab schedules
-        if section.get("labSchedules"):
-            for lab in section["labSchedules"]:
-                if lab.get("day"):
-                    days.add(lab["day"].upper())
+        # Check lab schedules using the normalized helper function
+        for lab_schedule in get_lab_schedules_flat(section):
+            if isinstance(lab_schedule, dict) and lab_schedule.get("day"):
+                days.add(lab_schedule["day"].upper())
 
-    return len(days), sorted(list(days))
+    days_list = sorted(list(days))
+    print(f"DEBUG: Found campus days: {days_list}")
+    return len(days), days_list
 
 
 # Helper to normalize labSchedules to a flat array, supporting both array and object (with classSchedules) formats
 def get_lab_schedules_flat(section):
+    """Helper to normalize labSchedules to a flat array of schedules.
+    Handles both old format (array of schedules) and new format (object with classSchedules)."""
     labSchedules = section.get("labSchedules")
+    if not labSchedules:
+        return []
+
+    # Handle old format: array of schedule objects
     if isinstance(labSchedules, list):
-        return labSchedules
-    if labSchedules and isinstance(labSchedules, dict) and isinstance(labSchedules.get("classSchedules"), list):
-        # Map classSchedules to lab schedule objects, using labRoomName if available
         return [
-            {**sched, "room": section.get("labRoomName") or sched.get("room") or "TBA"}
-            for sched in labSchedules["classSchedules"]
+            {
+                **schedule,
+                "room": section.get("labRoomName") or schedule.get("room") or "TBA",
+                "faculty": section.get("labFaculties") or "TBA"
+            }
+            for schedule in labSchedules
         ]
+
+    # Handle new format: object with classSchedules array
+    if isinstance(labSchedules, dict) and isinstance(labSchedules.get("classSchedules"), list):
+        return [
+            {
+                **schedule,
+                "room": section.get("labRoomName") or schedule.get("room") or "TBA",
+                "faculty": section.get("labFaculties") or "TBA"
+            }
+            for schedule in labSchedules["classSchedules"]
+        ]
+
+    print(f"WARNING: Unrecognized lab schedule format: {type(labSchedules)}")
     return []
 
 
@@ -2252,7 +2466,7 @@ def format_section_times(section):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port, debug=True)  # Debug mode enabled for development
 
 # Add this for Vercel
 app = app

@@ -791,6 +791,7 @@ const MakeRoutinePage = () => {
   };
 
   const handleGenerateRoutine = (useAI) => {
+    // Reset state
     setRoutineError("");
     setRoutineResult(null);
     setAiFeedback(null);
@@ -802,9 +803,9 @@ const MakeRoutinePage = () => {
       return;
     }
 
-    // Validate commute preference
+    // Validate commute preference for AI mode
     if (useAI && !commutePreference) {
-      setRoutineError("Please select a commute preference (Live Far or Live Near).");
+      setRoutineError("Please select a commute preference (Live Far or Live Near) when using AI.");
       return;
     }
 
@@ -1389,16 +1390,7 @@ const MakeRoutinePage = () => {
 
   const GenerateAIButton = () => (
     <button
-      onClick={() => {
-        setUsedAI(prevUsedAI => {
-          const newUsedAI = !prevUsedAI;
-          setRoutineResult(null);
-          setRoutineError(null);
-          setAiFeedback(null);
-          handleGenerateRoutine(newUsedAI);
-          return newUsedAI;
-        });
-      }}
+      onClick={() => handleGenerateRoutine(true)}  // Changed to directly call with true
       className="ai-best-routine-btn"
       style={{
         padding: "12px 28px",
@@ -1423,12 +1415,12 @@ const MakeRoutinePage = () => {
         e.currentTarget.style.transform = 'scale(1)';
         e.currentTarget.style.boxShadow = '0 4px 18px 0 rgba(79,140,255,0.22), 0 1.5px 6px 0 rgba(0,123,255,0.13)';
       }}
-      disabled={isLoading}
+      disabled={isLoading || routineCourses.length === 0 || routineDays.length === 0}
     >
       {isLoading ? (
-         usedAI ? "Generating with AI..." : "Generating..."
+         "Generating with AI..."
       ) : (
-         usedAI ? "Using AI for Best Routine" : "Use AI for Best Routine"
+         "Use AI for Best Routine"
       )}
     </button>
   );
