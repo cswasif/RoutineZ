@@ -12,10 +12,17 @@ from itertools import product
 import time
 
 print("\n=== Loading Environment Variables ===")
+# Debug: Print all environment variables
+print("Available environment variables:", list(os.environ.keys()))
+
 # Get Google API key from environment variable
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
+print("GOOGLE_API_KEY value type:", type(GOOGLE_API_KEY))
+print("GOOGLE_API_KEY length:", len(GOOGLE_API_KEY) if GOOGLE_API_KEY else "None")
 if not GOOGLE_API_KEY:
     print("Warning: GOOGLE_API_KEY environment variable is not set")
+else:
+    print("✓ GOOGLE_API_KEY is set and has a value")
 
 app = Flask(__name__)
 CORS(app)
@@ -25,16 +32,21 @@ gemini_configured = False
 try:
     print("\n=== Configuring Gemini API ===")
     import google.generativeai as genai
+    print("✓ google.generativeai package imported successfully")
     genai.configure(api_key=GOOGLE_API_KEY)
+    print("✓ genai.configure called with API key")
     # Create a single model instance to be reused
     gemini_model = genai.GenerativeModel("gemini-pro")
+    print("✓ GenerativeModel instance created")
     print("Gemini API configured with shared model instance.")
     gemini_configured = True
     print("✓ Gemini API configured successfully")
-except ImportError:
+except ImportError as ie:
+    print(f"✗ ImportError configuring Gemini: {ie}")
     print("✗ Warning: google.generativeai package not installed. AI features will be disabled.")
 except Exception as e:
-    print(f"✗ Failed to configure Gemini API: {e}")
+    print(f"✗ Failed to configure Gemini API: {str(e)}")
+    print(f"Error type: {type(e)}")
     gemini_model = None
 
 def check_ai_availability():
