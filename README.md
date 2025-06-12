@@ -1,184 +1,197 @@
-# RoutinEZ - USIS Course Management System
+# **RoutineZ - Course Routine Generator**
 
-RoutinEZ is a comprehensive web application designed to simplify course management and routine generation for students. It consists of a frontend web interface and a backend API.
+Welcome to RoutineZ! This application helps university students create optimal class schedules by automatically generating conflict-free routines based on their course preferences and constraints.
 
-## Recent Updates
+## **Overview of the App**
 
-### API Data Format Changes
-- Updated to support new API endpoint: `https://connapi.vercel.app/raw-schedule`
-- Added support for new lab schedule format where `labSchedules` is an object containing `classSchedules` array
-- Improved handling of both array and object formats for lab schedules throughout the application
+RoutineZ is designed to simplify the course registration process by:
+* Automatically generating conflict-free class schedules
+* Checking for exam time conflicts
+* Providing real-time seat availability information
+* Offering AI-powered schedule optimization
+* Supporting flexible time and day preferences
 
-### Backend Improvements
-- Enhanced data fetching and parsing from the new API endpoint
-- Added robust error handling for lab schedule processing
-- Improved exam conflict detection with better date/time handling
-- Added safe dictionary access using `.get()` throughout the codebase
+The app combines a powerful backend API with an intuitive frontend interface to make course planning effortless.
 
-### Frontend Enhancements
-- Updated `SeatStatusDialog` to handle both array and object formats for lab schedules
-- Added lab room display in the UI
-- Fixed React proxy setup for local development
-- Improved campus days display with better schedule handling
+## **How the App Works**
 
-## Features
+1. **Course Selection**: Browse and select your desired courses from the available offerings
+2. **Preference Setting**: Choose your preferred:
+   * Days of the week
+   * Time slots
+   * Faculty members (optional)
+   * Commute preferences (for AI optimization)
+3. **Routine Generation**: The app will generate a conflict-free schedule based on your selections
+4. **AI Optimization**: Optionally use AI to optimize your schedule for better time management
 
-RoutinEZ offers the following key features:
+## **Key Features**
 
-### Seat Status
--   **Real-time Data:** Check the current seat availability for any course.
--   **Detailed Course Information:** View detailed schedules (class and lab), assigned faculty, room information, and exam dates (midterm and final) for each section.
--   **Faculty Breakdown:** See how sections and available seats are distributed among different faculty members teaching a course.
+### **1. Course Management**
 
-### Routine Generation
--   **Flexible Input:** Easily select your desired courses, preferred faculty members, available days of the week, and time slots using intuitive input fields with autocomplete and tagging.
--   **AI-Powered Optimization:** Leverage the power of AI to generate a routine that attempts to optimize based on your preferences and a chosen commute style (living near or far from campus).
--   **Manual Control:** If you prefer, you can generate routines without the AI, based purely on your selected courses, faculty, days, and times.
--   **Conflict Detection:** The system automatically identifies and reports potential conflicts in your generated routine, including overlapping class/lab times and conflicting exam schedules.
--   **PNG Export:** Download your generated routine as a shareable image file.
+* View all available courses with seat availability
+* Get detailed course information including sections and faculty
+* Real-time updates of seat status
+* Filter courses by various criteria
 
-## Lab Schedule Format Support
+### **2. Schedule Generation**
 
-The system now handles two formats for lab schedules:
+* Automatic conflict detection for class times
+* Exam schedule conflict checking
+* Multiple schedule options when available
+* Manual and AI-powered generation modes
 
-### New Format (Object with classSchedules)
+### **3. AI Assistant**
+
+* Get intelligent answers about your schedule
+* Receive optimization suggestions
+* Analyze potential conflicts
+* Get commute-optimized schedules
+
+## **API Endpoints**
+
+### **Course Information**
+
+#### **Get All Courses**
+```http
+GET /api/courses
+```
+Returns a list of all available courses with their codes, names, and seat availability.
+
+#### **Get Course Details**
+```http
+GET /api/course_details?course={courseCode}
+```
+Returns detailed information about a specific course, including:
+* Available sections
+* Faculty members
+* Seat availability
+* Exam schedules
+
+### **Routine Generation**
+
+#### **Generate Routine**
+```http
+POST /api/routine
+```
+Generate a course routine based on preferences:
+
 ```json
 {
-  "labSectionId": 178628,
-  "labCourseCode": "CSE220L",
-  "labFaculties": "TBA",
-  "labName": "27",
-  "labRoomName": "09E-22L",
-  "labSchedules": {
-    "classSchedules": [
-      {
-        "startTime": "08:00:00",
-        "endTime": "10:50:00",
-        "day": "MONDAY"
+  "courses": [
+    {
+      "course": "CSE101",
+      "faculty": ["John Doe"],
+      "sections": {
+        "John Doe": "A"
       }
-    ]
-  }
+    }
+  ],
+  "days": ["SUNDAY", "TUESDAY"],
+  "times": ["8:00 AM-9:20 AM", "9:30 AM-10:50 AM"],
+  "useAI": true,
+  "commutePreference": "balanced"
 }
 ```
 
-### Legacy Format (Array)
+### **AI Features**
+
+#### **Ask AI Assistant**
+```http
+POST /api/ask_ai
+```
+Get AI-powered answers about your schedule:
 ```json
 {
-  "labSchedules": [
-    {
-      "startTime": "08:00:00",
-      "endTime": "10:50:00",
-      "day": "MONDAY"
-    }
-  ]
+  "question": "How can I optimize my schedule?",
+  "routine": [/* Your current routine */]
 }
 ```
 
-## How AI is Used
+#### **Check Exam Conflicts**
+```http
+POST /api/check_exam_conflicts_ai
+```
+Analyze potential exam conflicts in your schedule.
 
-The AI in RoutinEZ is specifically designed to assist in generating a better routine based on your input. When you choose to "Use AI for Best Routine," the system sends your selected courses, preferred faculty, available days, times, and commute preference to the backend. The AI algorithm then processes this information, considering factors like minimizing travel time (based on commute preference) and optimizing the distribution of classes, to propose a routine that best fits your criteria while avoiding conflicts.
+## **Getting Started**
 
-## How Faculty Information is Used
+### **1. Accessing the Application**
+* Visit [https://routinez.vercel.app](https://routinez.vercel.app)
+* No installation or login required
+* Works on all modern browsers
 
-Faculty information plays a crucial role in both the Seat Status and Routine Generation features:
+### **2. Creating Your First Schedule**
 
--   **Seat Status:** In the Seat Status view, you can see which faculty members are teaching each section and the availability of seats within those sections taught by specific faculty. This helps you make informed decisions based on instructor preferences.
--   **Routine Generation:** When generating a routine, you have the option to specify preferred faculty members for the courses you select. The routine generation logic (both manual and AI-powered) takes your faculty preferences into account when searching for available sections, prioritizing sections taught by your chosen instructors where possible.
+1. Click "Generate Routine" on the homepage
+2. Select your desired courses from the course list
+3. Choose your preferred days and time slots
+4. (Optional) Select specific faculty members
+5. Choose between AI or manual generation
+6. Click "Generate" to create your schedule
 
-## Tech Stack
+### **3. Using the AI Assistant**
 
-### Frontend
--   React.js
--   Axios for API calls
--   Date-fns for date formatting
--   Html2canvas for routine export
--   Custom components and inline styling for a minimal and modern look
+1. Generate a routine first
+2. Click on the AI Assistant button
+3. Ask questions about your schedule
+4. Get intelligent suggestions and analysis
 
-### Backend
--   Python
--   Flask
--   RESTful API architecture
--   AI/Optimization logic (implemented in Python)
--   Data parsing and handling
+## **Troubleshooting**
 
-## Installation
+### **Common Issues**
 
-These instructions are for setting up the project for **local development**.
+* **No schedules generated**
+  * Check if you've selected compatible time slots
+  * Ensure courses have available seats
+  * Try different day/time combinations
 
-### Prerequisites
--   Node.js (v14 or higher)
--   Python 3.8 or higher
--   npm or yarn
+* **AI features not working**
+  * Check your internet connection
+  * Try refreshing the page
+  * Clear browser cache
 
-### Backend Setup (Vercel Structure Local Test)
+* **Seat availability issues**
+  * Click refresh to get latest data
+  * Check the API status indicator
+  * Try again in a few minutes
 
-1.  Navigate to the root of the repository:
-    ```bash
-    cd path/to/RoutinEZ
-    ```
+## **Best Practices**
 
-2.  Install Python dependencies for the Vercel backend:
-    ```bash
-    pip install -r api/requirements.txt
-    ```
+1. **Course Selection**
+   * Start with required courses first
+   * Keep alternative courses in mind
+   * Check seat availability before planning
 
-3.  If your backend requires environment variables (like `GOOGLE_API_KEY`), create a `.env` file at the root of the repository.
+2. **Schedule Optimization**
+   * Consider your commute time
+   * Balance your daily course load
+   * Leave gaps for breaks and study time
 
-4.  Run the Vercel backend serverless function locally (requires `python-dotenv` if using .env):
-    ```bash
-    python api/usisvercel.py
-    ```
-    The server will run on `http://localhost:5000`.
+3. **Using AI Features**
+   * Be specific with your questions
+   * Provide context about your preferences
+   * Review AI suggestions carefully
 
-### Frontend Setup
-1.  Navigate to the frontend directory:
-    ```bash
-    cd USIS/usis-frontend
-    ```
+## **Updates and Support**
 
-2.  Install dependencies:
-    ```bash
-    npm install
-    ```
+* The application is regularly updated with new features
+* Clear your browser cache after updates
+* For support, use the feedback form in the app
 
-3.  Start the development server:
-    ```bash
-    npm start
-    ```
-    The application will open in your browser at `http://localhost:3000`
+## **Contributing**
 
-## Usage
+We welcome contributions! To contribute:
+1. Fork the repository
+2. Create your feature branch
+3. Submit a pull request
 
-Detailed usage instructions are provided within the application interface itself. Simply open the application in your browser and follow the prompts to check seat status or generate your routine.
+For detailed contribution guidelines, see our [GitHub repository](https://github.com/cswasif/routinez_Latest).
 
-## API Endpoints
+## **License**
 
-### Courses
--   `GET /api/courses` - Get all available courses
--   `GET /api/course_details?course={code}` - Get detailed course information
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
-### Routine
--   `POST /api/routine` - Generate routine with parameters:
-
-    ```json
-    {
-      "courses": [
-        {
-          "course": "CSE101",
-          "faculty": ["John Doe"],
-          "sections": {
-            "John Doe": "A"
-          }
-        }
-      ],
-      "days": ["Monday", "Wednesday"],
-      "times": ["8:00 AM-9:20 AM"],
-      "useAI": true,
-      "commutePreference": "far"
-    }
-    ```
-
-## Project Structure
+## **Project Structure**
 
 This project follows a standard structure suitable for Vercel deployment:
 
@@ -204,7 +217,7 @@ RoutinEZ/
 └── vercel.json             # Vercel configuration for routing serverless functions
 ```
 
-## Vercel Deployment
+## **Vercel Deployment**
 
 This project is configured for easy deployment on Vercel. The `vercel.json` file at the root of the repository specifies how incoming requests are handled.
 
@@ -221,30 +234,16 @@ To deploy to Vercel:
 
 After a new Vercel deployment, it is **highly recommended** to clear your browser's cache and cookies for the application's URL. This ensures that your browser loads the latest version of the frontend code, which is crucial for seeing recent changes and avoiding issues like outdated API endpoints being called.
 
-## Contributing
-
-Contributions are welcome! Please follow these steps:
-
-1.  Fork the repository.
-2.  Create your feature branch (`git checkout -b feature/AmazingFeature`).
-3.  Commit your changes (`git commit -m 'Add some AmazingFeature'`).
-4.  Push to the branch (`git push origin feature/AmazingFeature`).
-5.  Open a Pull Request.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
+## **Acknowledgements**
 
 -   Based on the USIS course data structure.
 -   Utilizes open-source libraries like React, Flask, Axios, date-fns, and html2canvas.
 
-## Contact
+## **Contact**
 
 For any questions, issues, or feedback, please open an issue on the GitHub repository.
 
-## Future Enhancements
+## **Future Enhancements**
 
 -   [ ] Dark mode support
 -   [ ] Mobile responsiveness improvements
