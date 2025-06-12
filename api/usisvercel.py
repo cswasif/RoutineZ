@@ -1884,311 +1884,34 @@ def get_exam_schedule():
 
 
 def try_ai_routine_generation(course_sections_map, selected_days, selected_times, commute_preference):
-    """AI-assisted routine generation using Gemini AI."""
     try:
-        # Generate commute preference text at the very beginning
-        if commute_preference.lower() == "far":
-            commute_text = "Student lives FAR from campus. Prefer fewer campus days (more compact schedule)."
-        elif commute_preference.lower() == "near":
-            commute_text = "Student lives NEAR campus. Prefer more spread out schedule (more campus days is fine)."
-        else:
-            commute_text = "No commute preference specified. Balance schedule as needed."
-
-        print("\n=== AI Routine Generation with Gemini ===")
-
-        # Debug print the input data
-        print("\nDEBUG: Input Data:")
-        print("course_sections_map:", type(course_sections_map))
-        for course, sections in course_sections_map.items():
-            print(f"\n{course}:")
-            for section in sections:
-                print(f"  Section type: {type(section)}")
-                print(f"  Section data: {section}")
-        print("\nselected_days:", selected_days)
-        print("selected_times:", selected_times)
-        print("commute_preference:", commute_preference)
-        print("commute_text:", commute_text)  # Add debug print for commute_text
-
-        # Get all possible combinations first
-        courses = list(course_sections_map.keys())
-        all_combinations = list(
-            product(*[course_sections_map[course] for course in courses])
+        # Process input data
+        all_combinations = try_all_section_combinations(
+            course_sections_map, selected_days, selected_times
         )
-        print(f"\nGenerated {len(all_combinations)} possible combinations")
-        
-        # Debug print first combination
-        if all_combinations:
-            print("\nDEBUG: First combination:")
-            for section in all_combinations[0]:
-                print(f"  Section type: {type(section)}")
-                print(f"  Section data: {section}")
+        if not all_combinations:
+            return {"error": "No valid combinations found"}
 
-        # STEP 1: Check exam conflicts FIRST
-        print("\n=== STEP 1: Checking Exam Conflicts ===")
-        valid_combinations = []
+        # Score each combination
+        scored_combinations = []
         for combination in all_combinations:
-            print("\nChecking combination for exam conflicts:")
-            for section in combination:
-                print(
-                    f"  {section.get('courseCode')} Section {section.get('sectionName')}"
-                )
-                print(
-                    f"    Mid Exam: {section.get('midExamDate', 'N/A')} at {section.get('midExamStartTime', 'N/A')}-{section.get('midExamEndTime', 'N/A')}"
-                )
-                print(
-                    f"    Final Exam: {section.get('finalExamDate', 'N/A')} at {section.get('finalExamStartTime', 'N/A')}-{section.get('finalExamEndTime', 'N/A')}"
-                )
+            score = calculate_routine_score(
+                combination, selected_days, selected_times, commute_preference
+            )
+            scored_combinations.append((score, combination))
 
-            has_exam_conflicts, exam_error = check_exam_compatibility(combination)
-            if has_exam_conflicts:
-                print(f"✗ Exam conflict found: {exam_error}")
-                # Return the specific exam error message
-                return {"error": exam_error}, 200
+        # Sort by score (highest first)
+        scored_combinations.sort(reverse=True, key=lambda x: x[0])
+        best_combination = scored_combinations[0][1]
 
-            print("✓ No exam conflicts found")
-
-            # STEP 2: Check time and day constraints
-            all_sections_valid = True
-            for section in combination:
-                # Check times
-                valid, time_error = filter_section_by_time(section, selected_times)
-                if not valid:
-                    print(f"✗ Invalid times: {time_error}")
-                    all_sections_valid = False
-                    break
-
-                # Check days
-                section_days = set()
-                if section.get("sectionSchedule") and section["sectionSchedule"].get(
-                    "classSchedules"
-                ):
-                    section_days.update(
-                        schedule["day"].upper()
-                        for schedule in section["sectionSchedule"]["classSchedules"]
-                    )
-                for lab in get_lab_schedules_flat(section):
-                    section_days.add(lab["day"].upper())
-
-                if not all(
-                    day in [d.upper() for d in selected_days] for day in section_days
-                ):
-                    print("✗ Invalid days")
-                    all_sections_valid = False
-                    break
-
-            if not all_sections_valid:
-                continue
-
-            # STEP 3: Check schedule conflicts
-            if is_valid_combination(combination):
-                print("✓ Valid combination found!")
-                valid_combinations.append(combination)
-            else:
-                print("✗ Schedule conflict found")
-
-        if not valid_combinations:
-            print("\n✗ No valid combinations found")
-            return {
-                "error": "Could not find a valid combination. Please check your selected time slots and days."
-            }, 200
-
-        # Calculate campus days for each combination
-        combinations_with_days = []
-        print("\n=== Campus Days Analysis ===")
-        for idx, combination in enumerate(valid_combinations):
-            days_count, days_list = calculate_campus_days(combination)
-            print(f"\nCombination {idx}:")
-            print(f"  Total campus days: {days_count}")
-            print(f"  Days required: {', '.join(days_list)}")
-
-            combo_info = {
-                "id": idx,
-                "campus_days": days_count,
-                "days_list": days_list,
-                "combination": combination,
-            }
-            combinations_with_days.append(combo_info)
-
-        # Sort combinations based on commute preference
-        if commute_preference == "far":
-            # For "Live Far", sort by ascending campus days (fewer days is better)
-            combinations_with_days.sort(key=lambda x: x["campus_days"])
-        else:
-            # For "Live Near" or no preference, sort by descending campus days (more days is better)
-            combinations_with_days.sort(key=lambda x: x["campus_days"], reverse=True)
-
-        # Get the best campus days count
-        best_days_count = combinations_with_days[0]["campus_days"]
-
-        # Find all combinations that tie for the best campus days count
-        tied_combinations = [
-            combo
-            for combo in combinations_with_days
-            if combo["campus_days"] == best_days_count
-        ]
-
-        if len(tied_combinations) == 1:
-            # No ties, use the best combination directly
-            best_combination = tied_combinations[0]["combination"]
-            print(f"\n✓ Selected combination with {best_days_count} campus days")
-            return {"routine": best_combination}, 200
-        else:
-            # We have ties, use Gemini to break them
-            print(f"\nFound {len(tied_combinations)} combinations tied at {best_days_count} campus days")
-            print("Using Gemini to break the tie...")
-
-            # Format combinations for Gemini
-            formatted_combinations = []
-            for combo in tied_combinations:
-                combo_info = {
-                    "id": combo["id"],
-                    "campus_days": combo["campus_days"],
-                    "days_list": combo["days_list"],
-                    "courses": [],
-                }
-
-                for section in combo["combination"]:
-                    course_info = {
-                        "courseCode": section.get("courseCode"),
-                        "section": section.get("sectionName"),
-                        "schedules": [],
-                    }
-
-                    # Add class schedules
-                    if section.get("sectionSchedule") and section["sectionSchedule"].get("classSchedules"):
-                        for sched in section["sectionSchedule"]["classSchedules"]:
-                            if sched["day"].upper() in selected_days:
-                                course_info["schedules"].append(
-                                    {
-                                        "type": "class",
-                                        "day": sched["day"].upper(),
-                                        "time": f"{sched['startTime']} - {sched['endTime']}",
-                                    }
-                                )
-
-                    # Add lab schedules using the normalized helper function
-                    for lab in get_lab_schedules_flat(section):
-                        if lab["day"].upper() in selected_days:
-                            course_info["schedules"].append(
-                                {
-                                    "type": "lab",
-                                    "day": lab["day"].upper(),
-                                    "time": f"{lab['startTime']} - {lab['endTime']}",
-                                }
-                            )
-
-                    combo_info["courses"].append(course_info)
-                formatted_combinations.append(combo_info)
-
-            # First validate the number of combinations
-            if len(formatted_combinations) == 0:
-                print("\n⚠ No combinations to compare")
-                return {"error": "No valid combinations found"}, 200
-
-            max_id = len(formatted_combinations) - 1
-            
-            prompt = f"""
-You are a university schedule optimizer. Break a tie between {len(formatted_combinations)} schedules that all require {best_days_count} campus days.
-
-STUDENT PREFERENCE:
-{commute_text}
-
-WHAT MAKES A GOOD SCHEDULE:
-1. Fewer gaps between classes = better
-2. Classes in preferred time slots = better
-3. Balanced workload across days = better
-4. No back-to-back classes = better
-
-SCHEDULES TO COMPARE:
-{json.dumps(formatted_combinations, indent=2)}
-
-YOUR TASK:
-Pick the best schedule by comparing:
-- How many gaps between classes
-- How well they fit in preferred time slots
-- How balanced the workload is
-- How many back-to-back classes
-
-RESPOND WITH EXACTLY 3 LINES AND NO OTHER TEXT:
-BEST_ID: <A SINGLE INTEGER from 0 to {max_id} ONLY. This is the INDEX of the combination to choose.>
-SCORE: <give a score from 1 to 10>
-REASON: <one short sentence why this schedule is best>
-
-Example (if there were {len(formatted_combinations)} combinations, with max_id {max_id}):
-BEST_ID: {min(2, max_id)} # Example: pick 0, 1, or 2, but stay within the valid 0 to {max_id} range
-SCORE: 8
-REASON: This schedule has the fewest gaps and best fits preferred time slots.
-
-IMPORTANT: You MUST provide a valid BEST_ID integer between 0 and {max_id} (inclusive). Your response format MUST be exactly 3 lines: BEST_ID, SCORE, REASON.
-"""
-
-            try:
-                print("\nConsulting Gemini AI for tie-breaking...")
-                model = genai.GenerativeModel("gemini-pro")  # Changed to experimental model
-                response = model.generate_content(prompt)
-                ai_response = response.text.strip()
-
-                # Debug print the raw response
-                print("\n=== Gemini Raw Response ===")
-                print("Response type:", type(ai_response))
-                print("Response length:", len(ai_response))
-                print("Response content:")
-                print("---")
-                print(ai_response)
-                print("---")
-
-                # Debug print the response line by line
-                print("\n=== Response Line Analysis ===")
-                lines = ai_response.strip().split("\n")
-                for i, line in enumerate(lines):
-                    print(f"Line {i + 1}: '{line}'")
-
-                # Parse Gemini response with more robust validation
-                if len(lines) != 3:
-                    print(f"\n⚠ Invalid response format: expected 3 lines, got {len(lines)}")
-                    best_combination = tied_combinations[0]["combination"]
-                    print("Using first combination as fallback")
-                    return {"routine": best_combination}, 200
-
-                best_id_line = lines[0].strip()
-                if not best_id_line.startswith("BEST_ID:"):
-                    print("\n⚠ Invalid response format: missing BEST_ID")
-                    print(f"First line was: '{best_id_line}'")
-                    best_combination = tied_combinations[0]["combination"]
-                    print("Using first combination as fallback")
-                    return {"routine": best_combination}, 200
-
-                try:
-                    best_id = int(best_id_line.split(":")[1].strip())
-                    if not (0 <= best_id <= max_id):
-                        print(f"\n⚠ Invalid ID: {best_id} (must be between 0 and {max_id})")
-                        # Use modulo to wrap around to a valid index
-                        best_id = best_id % (max_id + 1)
-                        print(f"Wrapped around to valid index: {best_id}")
-
-                    best_combination = tied_combinations[best_id]["combination"]
-                    print(f"\n✓ Gemini selected combination {best_id}")
-                    print(f"AI Response:\n{ai_response}")
-                    return {"routine": best_combination}, 200
-                except ValueError as e:
-                    print(f"\n⚠ Could not parse ID from response: {e}")
-                    print(f"Problematic line: '{best_id_line}'")
-                    best_combination = tied_combinations[0]["combination"]
-                    print("Using first combination as fallback")
-                    return {"routine": best_combination}, 200
-
-            except Exception as e:
-                print(f"Error with Gemini AI: {e}")
-                best_combination = tied_combinations[0]["combination"]
-                print("\n⚠ Gemini error, using first combination")
-                return {"routine": best_combination}, 200
+        # Format the response
+        return {
+            "sections": best_combination,
+            "feedback": get_routine_feedback_for_api(best_combination, commute_preference)
+        }
 
     except Exception as e:
-        print(f"Error in AI routine generation: {e}")
-        print("\nDEBUG: Error occurred at:")
-        import traceback
-        traceback.print_exc()
-        return {"error": "Error generating routine with AI. Please try manual generation."}, 200
+        return {"error": f"AI generation failed: {str(e)}"}
 
 
 def calculate_routine_score(
@@ -2391,7 +2114,6 @@ def calculate_campus_days(combination):
     days = set()
     for section in combination:
         if not isinstance(section, dict):
-            print(f"WARNING: Invalid section type: {type(section)}")
             continue
 
         # Check class schedules
@@ -2409,7 +2131,6 @@ def calculate_campus_days(combination):
                 days.add(lab_schedule["day"].upper())
 
     days_list = sorted(list(days))
-    print(f"DEBUG: Found campus days: {days_list}")
     return len(days), days_list
 
 
@@ -2511,7 +2232,6 @@ def format_section_times(section):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)  # Debug mode disabled for production
+    app.run(host="0.0.0.0", port=port, debug=False)  # Production mode
 
-# Add this for Vercel
 app = app
