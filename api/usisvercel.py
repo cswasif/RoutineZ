@@ -96,7 +96,16 @@ def check_connapi_status():
 
 @app.route("/api/test")
 def test():
-    return jsonify({"status": "ok"})
+    env_vars = list(os.environ.keys())
+    api_key = os.environ.get("GOOGLE_API_KEY")
+    return jsonify({
+        "status": "ok",
+        "environment": {
+            "has_api_key": bool(api_key),
+            "api_key_length": len(api_key) if api_key else 0,
+            "available_vars": env_vars
+        }
+    })
 
 @app.route("/api/courses")
 def get_courses():
