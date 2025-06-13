@@ -380,28 +380,33 @@ const ExamConflictMessage = ({ message }) => {
     finalConflicts: []
   };
 
-  // Parse the message
-  const coursesMatch = message.match(/Affected Courses:\s*([^]*?)(?=Midterm|$)/);
+  // Get unique course codes from the first "Affected Courses" section only
+  const coursesMatch = message.match(/^Exam Conflicts\n\nAffected Courses:\s*([^\n]*)/m);
   if (coursesMatch) {
-    sections.courses = coursesMatch[1].split(',').map(c => c.trim()).filter(Boolean);
+    sections.courses = [...new Set(
+      coursesMatch[1]
+        .split(/[,\s]+/)
+        .map(c => c.trim())
+        .filter(Boolean)
+    )];
   }
 
   // Extract midterm conflicts
-  const midtermMatch = message.match(/Midterm Conflicts(.*?)(?=Final Conflicts|$)/s);
+  const midtermMatch = message.match(/Midterm Conflicts\n([^]*?)(?=\nFinal Conflicts|$)/s);
   if (midtermMatch) {
     sections.midtermConflicts = midtermMatch[1]
       .split('\n')
       .map(line => line.trim())
-      .filter(line => line.includes('↔'));
+      .filter(line => line.includes('↔') || line.includes('->'));
   }
 
   // Extract final conflicts
-  const finalMatch = message.match(/Final Conflicts([^]*?)$/s);
+  const finalMatch = message.match(/Final Conflicts\n([^]*?)$/s);
   if (finalMatch) {
     sections.finalConflicts = finalMatch[1]
       .split('\n')
       .map(line => line.trim())
-      .filter(line => line.includes('↔'));
+      .filter(line => line.includes('↔') || line.includes('->'));
   }
 
   return (

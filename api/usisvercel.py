@@ -10,6 +10,7 @@ import json as pyjson
 import os
 from itertools import product
 import time
+import traceback
 
 print("\n=== Loading Environment Variables ===")
 # Debug: Print all environment variables
@@ -382,138 +383,212 @@ def normalize_date(date_str):
 def exam_schedules_overlap(exam1, exam2):
     """Check if two exam schedules conflict based on date and time."""
     try:
-        # Normalize and compare dates
-        date1 = normalize_date(exam1.get("examDate"))
-        date2 = normalize_date(exam2.get("examDate"))
-        
-        if not date1 or not date2:
-            print(f"Warning: Invalid date format - {exam1.get('examDate')} or {exam2.get('examDate')}")
-            return True  # Assume conflict if dates can't be parsed
-            
-        if date1 != date2:
-            return False  # Exams are on different days
+        # First check if the exam dates match
+        if exam1.get("examDate") != exam2.get("examDate"):
+            return False  # Exams are on different days, no conflict
 
         # Convert times to minutes for comparison
         def convert_time(time_str):
-            if not time_str:
-                return None
-                
             # Handle both 24-hour and 12-hour formats
             if isinstance(time_str, str):
-                time_str = time_str.strip().upper()
-                try:
-                    if "AM" in time_str or "PM" in time_str:
-                        # Try 12-hour formats
-                        for fmt in ["%I:%M %p", "%I:%M:%S %p"]:
-                            try:
-                                dt = datetime.strptime(time_str, fmt)
-                                return dt.hour * 60 + dt.minute
-                            except ValueError:
-                                continue
-                    else:
-                        # Try 24-hour formats
-                        for fmt in ["%H:%M:%S", "%H:%M"]:
-                            try:
-                                dt = datetime.strptime(time_str, fmt)
-                                return dt.hour * 60 + dt.minute
-                            except ValueError:
-                                continue
-                                
-                    print(f"Warning: Could not parse time: {time_str}")
-                    return None
-                except Exception as e:
-                    print(f"Error converting time: {e}")
-                    return None
-            return None
+                if "AM" in time_str.upper() or "PM" in time_str.upper():
+                    # 12-hour format
+                    try:
+                        dt = datetime.strptime(time_str.strip(), "%I:%M %p")
+                        return dt.hour * 60 + dt.minute
+                    except ValueError:
+                        try:
+                            dt = datetime.strptime(time_str.strip(), "%I:%M:%S %p")
+                            return dt.hour * 60 + dt.minute
+                        except ValueError:
+                            print(f"Warning: Could not parse 12-hour time: {time_str}")
+                            return 0
+                else:
+                    # 24-hour format
+                    try:
+                        dt = datetime.strptime(time_str.strip(), "%H:%M:%S")
+                        return dt.hour * 60 + dt.minute
+                    except ValueError:
+                        try:
+                            dt = datetime.strptime(time_str.strip(), "%H:%M")
+                            return dt.hour * 60 + dt.minute
+                        except ValueError:
+                            print(f"Warning: Could not parse 24-hour time: {time_str}")
+                            return 0
+            return 0
 
-        start1 = convert_time(exam1.get("startTime"))
-        end1 = convert_time(exam1.get("endTime"))
-        start2 = convert_time(exam2.get("startTime"))
-        end2 = convert_time(exam2.get("endTime"))
+        start1 = convert_time(exam1.get("startTime", ""))
+        end1 = convert_time(exam1.get("endTime", ""))
+        start2 = convert_time(exam2.get("startTime", ""))
+        end2 = convert_time(exam2.get("endTime", ""))
 
-        # If any time is invalid, assume conflict to be safe
-        if any(t is None for t in [start1, end1, start2, end2]):
-            print(f"Warning: Invalid time detected in exam schedules")
-            print(f"Times: {exam1.get('startTime')} - {exam1.get('endTime')} vs {exam2.get('startTime')} - {exam2.get('endTime')}")
+        # If any of the times are invalid (0), return True to be safe
+        if start1 == 0 or end1 == 0 or start2 == 0 or end2 == 0:
+            print(f"Warning: Invalid exam time detected. Assuming conflict for safety.")
+            print(
+                f"Times: {exam1.get('startTime')} - {exam1.get('endTime')} vs {exam2.get('startTime')} - {exam2.get('endTime')}"
+            )
             return True
 
         # Check if the time ranges overlap
         return schedules_overlap(start1, end1, start2, end2)
     except Exception as e:
         print(f"Error comparing exam schedules: {e}")
-        return True  # Assume conflict if comparison fails
+        return True  # Assume conflict if parsing fails, to be safe
 
 
 def check_exam_conflicts(section1, section2):
-    """Check for exam conflicts between two sections."""
-    try:
-        # Get exam schedules from both sections
-        section1_schedule = section1.get("sectionSchedule", {})
-        section2_schedule = section2.get("sectionSchedule", {})
+    """Check for conflicts between mid-term and final exams of two sections."""
+    # Skip comparison if sections are the same or from the same course
+    if section1.get("sectionId") == section2.get("sectionId") or section1.get(
+        "courseCode"
+    ) == section2.get("courseCode"):
+        print(
+            f"Skipping exam conflict check between sections of the same course or same section: {section1.get('courseCode')}"
+        )
+        return []
 
-        # Extract midterm exam details
-        mid1 = {
-            "examDate": section1_schedule.get("midExamDate"),
-            "startTime": section1_schedule.get("midExamStartTime"),
-            "endTime": section1_schedule.get("midExamEndTime")
-        }
-        
-        mid2 = {
-            "examDate": section2_schedule.get("midExamDate"),
-            "startTime": section2_schedule.get("midExamStartTime"),
-            "endTime": section2_schedule.get("midExamEndTime")
-        }
+    print(
+        f"=== Checking exam conflicts between {section1.get('courseCode')} Section {section1.get('sectionName')} ({section1.get('faculties')}) and {section2.get('courseCode')} Section {section2.get('sectionName')} ({section2.get('faculties')}) ==="
+    )
 
-        # Extract final exam details
-        final1 = {
-            "examDate": section1_schedule.get("finalExamDate"),
-            "startTime": section1_schedule.get("finalExamStartTime"),
-            "endTime": section1_schedule.get("finalExamEndTime")
-        }
-        
-        final2 = {
-            "examDate": section2_schedule.get("finalExamDate"),
-            "startTime": section2_schedule.get("finalExamStartTime"),
-            "endTime": section2_schedule.get("finalExamEndTime")
-        }
+    conflicts = []
 
-        conflicts = []
+    # Get all exam schedules
+    exams1 = []
+    exams2 = []
 
-        # Check midterm conflicts if both sections have midterm exams
-        if all(mid1.values()) and all(mid2.values()):
-            if exam_schedules_overlap(mid1, mid2):
-                conflicts.append({
-                    "type": "midterm",
-                    "section1": f"{section1.get('courseCode')} {section1.get('sectionName')}",
-                    "section2": f"{section2.get('courseCode')} {section2.get('sectionName')}",
-                    "date": mid1["examDate"],
-                    "time1": f"{mid1['startTime']} - {mid1['endTime']}",
-                    "time2": f"{mid2['startTime']} - {mid2['endTime']}"
-                })
+    # Get section schedules, prioritizing nested structure
+    section1_schedule = section1.get("sectionSchedule", {})
+    section2_schedule = section2.get("sectionSchedule", {})
 
-        # Check final exam conflicts if both sections have final exams
-        if all(final1.values()) and all(final2.values()):
-            if exam_schedules_overlap(final1, final2):
-                conflicts.append({
-                    "type": "final",
-                    "section1": f"{section1.get('courseCode')} {section1.get('sectionName')}",
-                    "section2": f"{section2.get('courseCode')} {section2.get('sectionName')}",
-                    "date": final1["examDate"],
-                    "time1": f"{final1['startTime']} - {final1['endTime']}",
-                    "time2": f"{final2['startTime']} - {final2['endTime']}"
-                })
+    # Add mid-term exams if they exist - Prioritize from sectionSchedule
+    mid1_date = section1_schedule.get("midExamDate") or section1.get("midExamDate")
+    mid1_start = section1_schedule.get("midExamStartTime") or section1.get(
+        "midExamStartTime"
+    )
+    mid1_end = section1_schedule.get("midExamEndTime") or section1.get("midExamEndTime")
 
-        return conflicts
+    if mid1_date and mid1_start and mid1_end:
+        print(
+            f"{section1.get('courseCode')} Midterm: {mid1_date} {mid1_start}-{mid1_end}"
+        )
+        exams1.append(
+            {
+                "examDate": mid1_date,
+                "startTime": mid1_start,
+                "endTime": mid1_end,
+                "type": "Mid",
+            }
+        )
+    else:
+        print(f"{section1.get('courseCode')} has no midterm exam data")
 
-    except Exception as e:
-        print(f"Error checking exam conflicts: {e}")
-        # Return a conflict to be safe
-        return [{
-            "type": "error",
-            "section1": f"{section1.get('courseCode')} {section1.get('sectionName')}",
-            "section2": f"{section2.get('courseCode')} {section2.get('sectionName')}",
-            "error": str(e)
-        }]
+    mid2_date = section2_schedule.get("midExamDate") or section2.get("midExamDate")
+    mid2_start = section2_schedule.get("midExamStartTime") or section2.get(
+        "midExamStartTime"
+    )
+    mid2_end = section2_schedule.get("midExamEndTime") or section2.get("midExamEndTime")
+
+    if mid2_date and mid2_start and mid2_end:
+        print(
+            f"{section2.get('courseCode')} Midterm: {mid2_date} {mid2_start}-{mid2_end}"
+        )
+        exams2.append(
+            {
+                "examDate": mid2_date,
+                "startTime": mid2_start,
+                "endTime": mid2_end,
+                "type": "Mid",
+            }
+        )
+    else:
+        print(f"{section2.get('courseCode')} has no midterm exam data")
+
+    # Add final exams if they exist - Prioritize from sectionSchedule
+    final1_date = section1_schedule.get("finalExamDate") or section1.get(
+        "finalExamDate"
+    )
+    final1_start = section1_schedule.get("finalExamStartTime") or section1.get(
+        "finalExamStartTime"
+    )
+    final1_end = section1_schedule.get("finalExamEndTime") or section1.get(
+        "finalExamEndTime"
+    )
+
+    if final1_date and final1_start and final1_end:
+        print(
+            f"{section1.get('courseCode')} Final: {final1_date} {final1_start}-{final1_end}"
+        )
+        exams1.append(
+            {
+                "examDate": final1_date,
+                "startTime": final1_start,
+                "endTime": final1_end,
+                "type": "Final",
+            }
+        )
+    else:
+        print(f"{section1.get('courseCode')} has no final exam data")
+
+    final2_date = section2_schedule.get("finalExamDate") or section2.get(
+        "finalExamDate"
+    )
+    final2_start = section2_schedule.get("finalExamStartTime") or section2.get(
+        "finalExamStartTime"
+    )
+    final2_end = section2_schedule.get("finalExamEndTime") or section2.get(
+        "finalExamEndTime"
+    )
+
+    if final2_date and final2_start and final2_end:
+        print(
+            f"{section2.get('courseCode')} Final: {final2_date} {final2_start}-{final2_end}"
+        )
+        exams2.append(
+            {
+                "examDate": final2_date,
+                "startTime": final2_start,
+                "endTime": final2_end,
+                "type": "Final",
+            }
+        )
+    else:
+        print(f"{section2.get('courseCode')} has no final exam data")
+
+    # Check for conflicts between all exam combinations
+    print("\nChecking for overlaps...")
+    for exam1 in exams1:
+        for exam2 in exams2:
+            print(
+                f"Comparing {section1.get('courseCode')} Section {section1.get('sectionName')} {exam1['type']} with {section2.get('courseCode')} Section {section2.get('sectionName')} {exam2['type']}"
+            )
+            if exam_schedules_overlap(exam1, exam2):
+                print(
+                    f"CONFLICT FOUND: {section1.get('courseCode')} Section {section1.get('sectionName')} {exam1['type']} and {section2.get('courseCode')} Section {section2.get('sectionName')} {exam2['type']} on {exam1['examDate']}"
+                )
+                conflicts.append(
+                    {
+                        "course1": section1["courseCode"],
+                        "course2": section2["courseCode"],
+                        "date": exam1["examDate"],
+                        "type1": exam1["type"],
+                        "type2": exam2["type"],
+                        "time1": f"{exam1['startTime']} - {exam1['endTime']}",
+                        "time2": f"{exam2['startTime']} - {exam2['endTime']}",
+                    }
+                )
+            else:
+                print(
+                    f"No conflict found between {section1.get('courseCode')} Section {section1.get('sectionName')} {exam1['type']} and {section2.get('courseCode')} Section {section2.get('sectionName')} {exam2['type']}"
+                )
+
+    if not conflicts:
+        print("No exam conflicts found between these sections")
+    else:
+        print(f"Found {len(conflicts)} conflicts!")
+
+    return conflicts
 
 
 def has_internal_conflicts(section):
@@ -823,7 +898,7 @@ def format_exam_conflicts_message(conflicts):
     if not mid_conflicts and not final_conflicts:
         return ""
 
-    # Build message in the new format with proper line breaks
+    # Build message with proper formatting
     message = "Exam Conflicts\n\n"
     message += f"Affected Courses: {', '.join(sorted(courses_involved))}\n\n"
 
@@ -1221,7 +1296,6 @@ def try_all_section_combinations(course_sections_map, selected_days, selected_ti
 
 @app.route("/api/routine", methods=["POST"])
 def generate_routine():
-    """Generate a routine based on selected courses and preferences."""
     try:
         # Load fresh data for each routine generation request
         print("\n=== Loading Fresh Course Data ===")
@@ -1239,200 +1313,171 @@ def generate_routine():
 
         # Handle both old and new request formats
         if "courses" in request_data:
-            # New format
-            print("\nProcessing new format...")
-            courses_data = request_data.get("courses", [])
-            print("Courses data:", courses_data)
-            selected_courses = []
-            for course in courses_data:
-                if isinstance(course, dict) and course.get("course"):
-                    selected_courses.append(course["course"])
-            selected_days = request_data.get("days", [])
-            selected_times = request_data.get("times", [])
-            generation_method = "ai" if request_data.get("useAI", False) else "manual"
-            commute_preference = request_data.get("commutePreference", "")
-        else:
-            # Old format
-            print("\nProcessing old format...")
-            selected_courses = request_data.get("selectedCourses", [])
-            selected_days = request_data.get("selectedDays", [])
-            selected_times = request_data.get("selectedTimes", [])
-            generation_method = request_data.get("method", "manual")
+            courses = request_data["courses"]
+            days = request_data.get("days", [])
+            times = request_data.get("times", [])
+            use_ai = request_data.get("useAI", False)
             commute_preference = request_data.get("commutePreference", "")
 
-        print("\n=== Processed Data ===")
-        print("Selected courses:", selected_courses)
-        print("Selected days:", selected_days)
-        print("Selected times:", selected_times)
-        print("Generation method:", generation_method)
-        print("Commute preference:", commute_preference)
+            # Get all possible combinations
+            all_combinations = []
+            for course in courses:
+                course_code = course["course"]
+                faculty_list = course["faculty"]
+                sections_by_faculty = course.get("sections", {})
+                
+                # Find all sections for this course
+                course_sections = []
+                
+                # Get all sections for the course
+                available_sections = [s for s in fresh_data if s.get("courseCode") == course_code]
+                
+                if not available_sections:
+                    print(f"Course not found in fresh data: {course_code}")
+                    return jsonify({"error": f"Course {course_code} not found in available courses"}), 400
 
-        if not selected_courses:
-            print("\n❌ No courses selected")
-            print("Selected courses array is empty:", selected_courses)
-            return jsonify({"error": "No courses selected"}), 400
-        if not selected_days:
-            print("\n❌ No days selected")
-            return jsonify({"error": "No days selected"}), 400
-        if not selected_times:
-            print("\n❌ No time slots selected")
-            return jsonify({"error": "No time slots selected"}), 400
+                # If no faculty selected, get all sections with available seats
+                if not faculty_list:
+                    print(f"No faculty selected for {course_code}, getting all available sections")
+                    course_sections = [
+                        section for section in available_sections 
+                        if section.get("capacity", 0) - section.get("consumedSeat", 0) > 0
+                    ]
+                else:
+                    # Get sections for selected faculty
+                    for faculty in faculty_list:
+                        if faculty in sections_by_faculty:
+                            # If a specific section is selected for this faculty
+                            section_name = sections_by_faculty[faculty]
+                            matching_sections = [
+                                s for s in available_sections 
+                                if s.get("sectionName") == section_name 
+                                and s.get("faculties") == faculty
+                                and s.get("capacity", 0) - s.get("consumedSeat", 0) > 0
+                            ]
+                            course_sections.extend(matching_sections)
+                        else:
+                            # If no specific section is selected, get all sections for this faculty
+                            faculty_sections = [
+                                s for s in available_sections 
+                                if s.get("faculties") == faculty
+                                and s.get("capacity", 0) - s.get("consumedSeat", 0) > 0
+                            ]
+                            course_sections.extend(faculty_sections)
+                
+                if not course_sections:
+                    msg = "No available sections found"
+                    if faculty_list:
+                        msg += " with selected faculty"
+                    msg += f" for {course_code}"
+                    print(msg)
+                    return jsonify({"error": msg}), 400
+                
+                print(f"Found {len(course_sections)} sections for {course_code}")
+                all_combinations.append(course_sections)
 
-        # Create course sections map using fresh data
-        course_sections_map = {}
-        for course_code in selected_courses:
-            sections = []
-            for section in fresh_data:  # Use fresh_data instead of global data
-                if section.get("courseCode") == course_code:
-                    sections.append(section)
-            if sections:
-                course_sections_map[course_code] = sections
-            else:
-                return (
-                    jsonify(
-                        {"error": f"No sections found for course {course_code}"}
-                    ),
-                    404,
-                )
+            if not all_combinations:
+                return jsonify({"error": "No valid sections found for any courses"}), 400
 
-        print("\n=== Found Sections ===")
-        for course, sections in course_sections_map.items():
-            print(f"{course}: {len(sections)} sections")
+            # Generate all possible combinations
+            try:
+                all_combinations = list(product(*all_combinations))
+                print(f"Generated {len(all_combinations)} possible combinations")
+            except Exception as e:
+                print(f"Error generating combinations: {str(e)}")
+                return jsonify({"error": "Failed to generate valid combinations. Please check your course selections."}), 400
 
-        # Try AI generation first if selected
-        if generation_method == "ai":
-            print("\n=== Attempting AI Generation ===")
-            result = try_ai_routine_generation(
-                course_sections_map, selected_days, selected_times, commute_preference
-            )
-            if isinstance(result, tuple):
-                return result
-            if not result.get("error"):
-                print("✓ AI generation successful")
-                return jsonify(result)
-            print("✗ AI generation failed, falling back to manual")
+            if not all_combinations:
+                return jsonify({"error": "No valid combinations could be generated"}), 400
 
-        # Fall back to manual generation
-        print("\n=== Attempting Manual Generation ===")
-        result = try_manual_routine_generation(
-            course_sections_map, selected_days, selected_times
-        )
-        if isinstance(result, tuple):
-            return result
-        if result.get("error"):
-            print(f"✗ Manual generation failed: {result['error']}")
-            return jsonify(result), 200
-        print("✓ Manual generation successful")
-        return jsonify(result)
+            # STEP 1: Check exam conflicts
+            print("\n=== STEP 1: Checking Exam Conflicts ===")
+            combinations_without_exam_conflicts = []
+            for combination in all_combinations:
+                # Validate combination structure
+                if not all(isinstance(section, dict) and "courseCode" in section for section in combination):
+                    print("Invalid section found in combination, skipping...")
+                    continue
+
+                has_exam_conflicts, exam_error = check_exam_compatibility(combination)
+                if has_exam_conflicts:
+                    print(f"✗ Exam conflict found: {exam_error}")
+                    # Format the error message for the frontend's ExamConflictMessage component
+                    affected_courses = [section["courseCode"] for section in combination]
+                    error_msg = f"Exam Conflicts\nAffected Courses: {', '.join(affected_courses)}\n{exam_error}"
+                    return jsonify({"error": error_msg}), 200
+                combinations_without_exam_conflicts.append(combination)
+
+            if not combinations_without_exam_conflicts:
+                return jsonify({"error": "No valid combinations found without exam conflicts"}), 200
+
+            # STEP 2: Check time conflicts
+            valid_combinations = []
+            for combination in combinations_without_exam_conflicts:
+                if is_valid_combination(combination):
+                    valid_combinations.append(combination)
+
+            if not valid_combinations:
+                return jsonify({"error": "No valid combinations found without time conflicts"}), 200
+
+            # STEP 3: Check day/time preferences
+            final_combinations = []
+            for combination in valid_combinations:
+                all_sections_valid = True
+                for section in combination:
+                    # Check if section schedules fit within selected times
+                    valid_time, _ = filter_section_by_time(section, times)
+                    if not valid_time:
+                        all_sections_valid = False
+                        break
+
+                    # Check if section days are in selected days
+                    section_days = set()
+                    if section.get("sectionSchedule") and section["sectionSchedule"].get("classSchedules"):
+                        section_days.update(schedule["day"].upper() 
+                            for schedule in section["sectionSchedule"]["classSchedules"])
+                    for lab in get_lab_schedules_flat(section):
+                        section_days.add(lab["day"].upper())
+                    
+                    if not all(day.upper() in [d.upper() for d in days] for day in section_days):
+                        all_sections_valid = False
+                        break
+
+                if all_sections_valid:
+                    final_combinations.append(combination)
+
+            if not final_combinations:
+                return jsonify({"error": "No combinations found that match your day and time preferences"}), 200
+
+            # If using AI, pass to AI routine generation
+            if use_ai:
+                return try_ai_routine_generation(final_combinations[0], days, times, commute_preference)
+
+            # Return the first valid combination
+            return jsonify(final_combinations[0]), 200
 
     except Exception as e:
-        print(f"Error in generate_routine: {e}")
-        return jsonify({"error": str(e)}), 500
+        print(f"Error in generate_routine: {str(e)}")
+        traceback.print_exc()  # Print full traceback for debugging
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
-
-def try_manual_routine_generation(course_sections_map, selected_days, selected_times):
-    """Fallback function for manual routine generation when AI fails."""
+def try_ai_routine_generation(valid_combination, selected_days, selected_times, commute_preference):
     try:
-        print("=== Manual Routine Generation ===")
-
-        # Get all possible combinations first
-        courses = list(course_sections_map.keys())
-        all_combinations = list(
-            product(*[course_sections_map[course] for course in courses])
-        )
-        print(f"Generated {len(all_combinations)} possible combinations")
-
-        # STEP 1: Check exam conflicts
-        print("\n=== STEP 1: Checking Exam Conflicts ===")
-        combinations_without_exam_conflicts = []
-        for combination in all_combinations:
-            has_exam_conflicts, exam_error = check_exam_compatibility(combination)
-            if has_exam_conflicts:
-                print(f"✗ Exam conflict found: {exam_error}")
-                return jsonify({"error": exam_error}), 200  # Return exam conflict error immediately
-            print("✓ No exam conflicts found")
-            combinations_without_exam_conflicts.append(combination)
-
-        if not combinations_without_exam_conflicts:
-            error_msg = "All possible combinations have exam conflicts.\n"
-            error_msg += "Please try different sections to avoid exam schedule conflicts."
-            return jsonify({"error": error_msg}), 200
-
-        print(f"\nFound {len(combinations_without_exam_conflicts)} combinations without exam conflicts")
-
-        # STEP 2: Check time and day constraints
-        print("\n=== STEP 2: Checking Time and Day Constraints ===")
-        # Iterate through combinations without exam conflicts
-        for combination in combinations_without_exam_conflicts:
-            print("\nChecking combination for time/day constraints:")
-            for section in combination:
-                if not isinstance(section, dict):
-                    print(f"  Skipping non-dict section: {section}")
-                    all_sections_valid = False
-                    break
-                print(
-                    f"  {section['courseCode']} Section {section['sectionName']}"
-                )
-
-            # Check if all sections fit selected days and times
-            all_sections_valid = True
-            for section in combination:
-                # Check times
-                valid, time_error = filter_section_by_time(section, selected_times)
-                if not valid:
-                    print(f"✗ Invalid times: {time_error}")
-                    all_sections_valid = False
-                    break
-
-                # Check days
-                section_days = set()
-                if section.get("sectionSchedule") and section["sectionSchedule"].get(
-                    "classSchedules"
-                ):
-                    section_days.update(
-                        schedule["day"].upper()
-                        for schedule in section["sectionSchedule"]["classSchedules"]
-                    )
-                for lab in get_lab_schedules_flat(section):
-                    section_days.add(lab["day"].upper())
-
-                if not all(
-                    day in [d.upper() for d in selected_days] for day in section_days
-                ):
-                    print("✗ Invalid days")
-                    all_sections_valid = False
-                    break
-
-            if not all_sections_valid:
-                continue
-
-            # Check schedule conflicts
-            if is_valid_combination(combination):
-                print("✓ Valid combination found!")
-                return jsonify({"routine": combination}), 200
-            else:
-                print("✗ Schedule conflict found")
-
-        print("\n✗ No valid combination found")
-        return (
-            jsonify(
-                {
-                    "error": "Could not find a valid combination without conflicts. Please try different sections or time slots."
-                }
-            ),
-            200,
-        )
+        print("\n=== AI Routine Generation ===")
+        
+        # Since we already have a valid combination (no exam conflicts),
+        # proceed with AI optimization
+        try:
+            ai_result = optimize_routine_with_ai(valid_combination, selected_days, selected_times, commute_preference)
+            return jsonify(ai_result), 200
+        except Exception as ai_error:
+            print(f"AI optimization failed: {str(ai_error)}")
+            # If AI fails, return the valid combination we already have
+            return jsonify(valid_combination), 200
 
     except Exception as e:
-        print(f"Error in manual routine generation: {e}")
-        return (
-            jsonify(
-                {
-                    "error": "An error occurred during manual routine generation. Please try again."
-                }
-            ),
-            200,
-        )
+        print(f"Error in try_ai_routine_generation: {str(e)}")
+        return jsonify({"error": "An error occurred during AI routine generation. Please try again."}), 500
 
 
 def auto_fix_json(s):
@@ -1834,35 +1879,23 @@ def get_exam_schedule():
     return jsonify({"error": "Section not found"}), 404
 
 
-def try_ai_routine_generation(course_sections_map, selected_days, selected_times, commute_preference):
+def try_ai_routine_generation(valid_combination, selected_days, selected_times, commute_preference):
     try:
-        # Process input data
-        all_combinations = try_all_section_combinations(
-            course_sections_map, selected_days, selected_times
-        )
-        if not all_combinations:
-            return {"error": "No valid combinations found"}
-
-        # Score each combination
-        scored_combinations = []
-        for combination in all_combinations:
-            score = calculate_routine_score(
-                combination, selected_days, selected_times, commute_preference
-            )
-            scored_combinations.append((score, combination))
-
-        # Sort by score (highest first)
-        scored_combinations.sort(reverse=True, key=lambda x: x[0])
-        best_combination = scored_combinations[0][1]
-
-        # Format the response
-        return {
-            "sections": best_combination,
-            "feedback": get_routine_feedback_for_api(best_combination, commute_preference)
-        }
+        print("\n=== AI Routine Generation ===")
+        
+        # Since we already have a valid combination (no exam conflicts),
+        # proceed with AI optimization
+        try:
+            ai_result = optimize_routine_with_ai(valid_combination, selected_days, selected_times, commute_preference)
+            return jsonify(ai_result), 200
+        except Exception as ai_error:
+            print(f"AI optimization failed: {str(ai_error)}")
+            # If AI fails, return the valid combination we already have
+            return jsonify(valid_combination), 200
 
     except Exception as e:
-        return {"error": f"AI generation failed: {str(e)}"}
+        print(f"Error in try_ai_routine_generation: {str(e)}")
+        return jsonify({"error": "An error occurred during AI routine generation. Please try again."}), 500
 
 
 def calculate_routine_score(
