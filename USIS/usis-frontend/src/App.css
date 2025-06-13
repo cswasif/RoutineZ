@@ -27,9 +27,50 @@
 
 .usis-title {
   margin: 0;
-  font-size: 2rem;
+  font-size: 2.2rem;
   color: #333;
   font-weight: bold;
+  display: inline-flex;
+  align-items: center;
+}
+
+.tagline {
+  font-family: 'Inter', sans-serif;
+  font-style: italic;
+  font-size: 0.9rem;
+  color: #666;
+  margin-top: 4px;
+  font-weight: 400;
+  text-align: left;
+}
+
+.tagline::after {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background-color: #4CAF50;
+  border-radius: 50%;
+  margin-left: 6px;
+  margin-bottom: 2px;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7);
+  }
+  
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(76, 175, 80, 0);
+  }
+  
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(76, 175, 80, 0);
+  }
 }
 
 /* Waves Component */

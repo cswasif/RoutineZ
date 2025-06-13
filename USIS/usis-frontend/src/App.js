@@ -2196,29 +2196,32 @@ function App() {
             <div style={{ 
               display: 'flex', 
               justifyContent: 'space-between', 
-              alignItems: 'center', 
+              alignItems: 'flex-start', 
               marginBottom: '20px'
             }}>
-              <h1 className="usis-title">RoutineZ</h1>
-              <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                <ApiStatus />
-                {routineResult && (
-                  <button
-                    onClick={handleDownloadPNG}
-                    style={{
-                      backgroundColor: '#1976d2',
-                      color: 'white',
-                      padding: '8px 16px',
-                      borderRadius: '4px',
-                      border: 'none',
-                      cursor: 'pointer',
-                      fontSize: '0.9em'
-                    }}
-                  >
-                    Download PNG
-                  </button>
-                )}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '5px' }}>
+                  <h1 className="usis-title">RoutineZ</h1>
+                  <ApiStatus />
+                </div>
+                <div className="tagline">BracU&apos;s #1 LIVE Routine Generator</div>
               </div>
+              {routineResult && (
+                <button
+                  onClick={handleDownloadPNG}
+                  style={{
+                    backgroundColor: '#1976d2',
+                    color: 'white',
+                    padding: '8px 16px',
+                    borderRadius: '4px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: '0.9em'
+                  }}
+                >
+                  Download PNG
+                </button>
+              )}
             </div>
           </div>
         </div>
