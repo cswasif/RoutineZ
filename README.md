@@ -255,6 +255,12 @@ For any questions, issues, or feedback, please open an issue on the GitHub repos
 
 # USIS API Documentation
 
+<p align="center">
+  <img src="assets/logo.svg" alt="RoutineZ Logo" width="150" height="150"/>
+</p>
+
+<h1 align="center">RoutineZ - Smart Course Scheduling</h1>
+
 ## Overview
 The USIS API is a Flask-based backend service that provides course scheduling and routine generation functionality with AI assistance. It uses Google's Gemini AI for intelligent routine optimization and feedback.
 
