@@ -504,21 +504,19 @@ const ExamConflictMessage = ({ message }) => {
 const ExamSchedule = ({ sections }) => {
   // Extract and organize exam dates
   const examDates = sections.map(section => {
-    // Split date and time for midterm and final
-    const parseExamDetail = (detail) => {
-      if (!detail) return { date: '', time: '' };
-      // Try to split by newline or by first space
-      const [date, ...rest] = detail.split(/\n|\r|,|\s(?=\d{1,2}:\d{2}\s*[AP]M)/);
-      const time = rest.join(' ').trim();
-      return { date: date.trim(), time };
-    };
-    const mid = parseExamDetail(section.sectionSchedule?.midExamDetail);
-    const fin = parseExamDetail(section.sectionSchedule?.finalExamDetail);
     return {
       courseCode: section.courseCode,
       sectionName: section.sectionName,
-      midterm: mid,
-      final: fin
+      midExamDate: section.sectionSchedule?.midExamDate || null,
+      midExamStartTime: section.sectionSchedule?.midExamStartTime || null,
+      midExamEndTime: section.sectionSchedule?.midExamEndTime || null,
+      midExamTime: section.sectionSchedule?.midExamStartTime && section.sectionSchedule?.midExamEndTime ? 
+        `${formatTime12Hour(section.sectionSchedule.midExamStartTime)} - ${formatTime12Hour(section.sectionSchedule.midExamEndTime)}` : null,
+      finalExamDate: section.sectionSchedule?.finalExamDate || null,
+      finalExamStartTime: section.sectionSchedule?.finalExamStartTime || null,
+      finalExamEndTime: section.sectionSchedule?.finalExamEndTime || null,
+      finalExamTime: section.sectionSchedule?.finalExamStartTime && section.sectionSchedule?.finalExamEndTime ? 
+        `${formatTime12Hour(section.sectionSchedule.finalExamStartTime)} - ${formatTime12Hour(section.sectionSchedule.finalExamEndTime)}` : null
     };
   });
 
@@ -564,26 +562,26 @@ const ExamSchedule = ({ sections }) => {
                 <tr key={index}>
                   <td>{exam.courseCode}</td>
                   <td>{exam.sectionName}</td>
-                  <td>
-                    {exam.midterm.date ? (
-                      <>
-                        <div>{exam.midterm.date}</div>
-                        {exam.midterm.time && <div style={{ color: '#666', fontSize: '0.9em' }}>{exam.midterm.time}</div>}
-                      </>
-                    ) : (
-                      <span style={{ color: '#aaa', fontStyle: 'italic' }}>Not Scheduled</span>
-                    )}
-                  </td>
-                  <td>
-                    {exam.final.date ? (
-                      <>
-                        <div>{exam.final.date}</div>
-                        {exam.final.time && <div style={{ color: '#666', fontSize: '0.9em' }}>{exam.final.time}</div>}
-                      </>
-                    ) : (
-                      <span style={{ color: '#aaa', fontStyle: 'italic' }}>Not Scheduled</span>
-                    )}
-                  </td>
+                                     <td>
+                     {exam.midExamDate ? (
+                       <>
+                         <div>{exam.midExamDate}</div>
+                         <div style={{ color: '#666', fontSize: '0.97em' }}>{exam.midExamTime}</div>
+                       </>
+                     ) : (
+                       <span style={{ color: '#aaa', fontStyle: 'italic' }}>Not Scheduled</span>
+                     )}
+                   </td>
+                   <td>
+                     {exam.finalExamDate ? (
+                       <>
+                         <div>{exam.finalExamDate}</div>
+                         <div style={{ color: '#666', fontSize: '0.97em' }}>{exam.finalExamTime}</div>
+                       </>
+                     ) : (
+                       <span style={{ color: '#aaa', fontStyle: 'italic' }}>Not Scheduled</span>
+                     )}
+                   </td>
                 </tr>
               ))
             )}
@@ -2201,7 +2199,7 @@ function App() {
               alignItems: 'center', 
               marginBottom: '20px'
             }}>
-              <h1 className="usis-title">RoutinEZ</h1>
+              <h1 className="usis-title">RoutineZ</h1>
               <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
                 <ApiStatus />
                 {routineResult && (
