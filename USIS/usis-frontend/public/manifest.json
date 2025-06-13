@@ -3,9 +3,19 @@
   "name": "RoutineZ - Easy Course Routine Generator",
   "icons": [
     {
-      "src": "routinez.png",
-      "sizes": "512x512",
-      "type": "image/png"
+      "src": "favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "routinez-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "routinez-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
     }
   ],
   "start_url": ".",
