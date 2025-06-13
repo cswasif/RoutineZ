@@ -258,8 +258,15 @@ class TimeUtils:
 class ExamConflictChecker:
     @staticmethod
     def check_conflicts(sections):
-        # Combined conflict checking logic
-        pass
+        """Check for conflicts between mid-term and final exams of sections."""
+        exam_conflicts = []
+        for i, section1 in enumerate(sections):
+            for j in range(i + 1, len(sections)):
+                section2 = sections[j]
+                conflicts = check_exam_conflicts(section1, section2)
+                if conflicts:
+                    exam_conflicts.extend(conflicts)
+        return exam_conflicts
 
     @staticmethod
     def format_conflict_message(conflicts):
@@ -356,214 +363,157 @@ def schedules_overlap(start1, end1, start2, end2):
     return max(start1, start2) < min(end1, end2)
 
 
+def normalize_date(date_str):
+    """Normalize date string to YYYY-MM-DD format."""
+    if not date_str:
+        return None
+    try:
+        # Try parsing common date formats
+        for fmt in ["%Y-%m-%d", "%d-%m-%Y", "%Y/%m/%d", "%d/%m/%Y"]:
+            try:
+                return datetime.strptime(date_str, fmt).strftime("%Y-%m-%d")
+            except ValueError:
+                continue
+        return None
+    except Exception as e:
+        print(f"Error normalizing date: {e}")
+        return None
+
 def exam_schedules_overlap(exam1, exam2):
     """Check if two exam schedules conflict based on date and time."""
     try:
-        # First check if the exam dates match
-        if exam1.get("examDate") != exam2.get("examDate"):
-            return False  # Exams are on different days, no conflict
+        # Normalize and compare dates
+        date1 = normalize_date(exam1.get("examDate"))
+        date2 = normalize_date(exam2.get("examDate"))
+        
+        if not date1 or not date2:
+            print(f"Warning: Invalid date format - {exam1.get('examDate')} or {exam2.get('examDate')}")
+            return True  # Assume conflict if dates can't be parsed
+            
+        if date1 != date2:
+            return False  # Exams are on different days
 
         # Convert times to minutes for comparison
         def convert_time(time_str):
+            if not time_str:
+                return None
+                
             # Handle both 24-hour and 12-hour formats
             if isinstance(time_str, str):
-                if "AM" in time_str.upper() or "PM" in time_str.upper():
-                    # 12-hour format
-                    try:
-                        dt = datetime.strptime(time_str.strip(), "%I:%M %p")
-                        return dt.hour * 60 + dt.minute
-                    except ValueError:
-                        try:
-                            dt = datetime.strptime(time_str.strip(), "%I:%M:%S %p")
-                            return dt.hour * 60 + dt.minute
-                        except ValueError:
-                            print(f"Warning: Could not parse 12-hour time: {time_str}")
-                            return 0
-                else:
-                    # 24-hour format
-                    try:
-                        dt = datetime.strptime(time_str.strip(), "%H:%M:%S")
-                        return dt.hour * 60 + dt.minute
-                    except ValueError:
-                        try:
-                            dt = datetime.strptime(time_str.strip(), "%H:%M")
-                            return dt.hour * 60 + dt.minute
-                        except ValueError:
-                            print(f"Warning: Could not parse 24-hour time: {time_str}")
-                            return 0
-            return 0
+                time_str = time_str.strip().upper()
+                try:
+                    if "AM" in time_str or "PM" in time_str:
+                        # Try 12-hour formats
+                        for fmt in ["%I:%M %p", "%I:%M:%S %p"]:
+                            try:
+                                dt = datetime.strptime(time_str, fmt)
+                                return dt.hour * 60 + dt.minute
+                            except ValueError:
+                                continue
+                    else:
+                        # Try 24-hour formats
+                        for fmt in ["%H:%M:%S", "%H:%M"]:
+                            try:
+                                dt = datetime.strptime(time_str, fmt)
+                                return dt.hour * 60 + dt.minute
+                            except ValueError:
+                                continue
+                                
+                    print(f"Warning: Could not parse time: {time_str}")
+                    return None
+                except Exception as e:
+                    print(f"Error converting time: {e}")
+                    return None
+            return None
 
-        start1 = convert_time(exam1.get("startTime", ""))
-        end1 = convert_time(exam1.get("endTime", ""))
-        start2 = convert_time(exam2.get("startTime", ""))
-        end2 = convert_time(exam2.get("endTime", ""))
+        start1 = convert_time(exam1.get("startTime"))
+        end1 = convert_time(exam1.get("endTime"))
+        start2 = convert_time(exam2.get("startTime"))
+        end2 = convert_time(exam2.get("endTime"))
 
-        # If any of the times are invalid (0), return True to be safe
-        if start1 == 0 or end1 == 0 or start2 == 0 or end2 == 0:
-            print(f"Warning: Invalid exam time detected. Assuming conflict for safety.")
-            print(f"Times: {    exam1.get('startTime')} - {    exam1.get('endTime')} vs {    exam2.get('startTime')} - {    exam2.get('endTime')}"
-            )
+        # If any time is invalid, assume conflict to be safe
+        if any(t is None for t in [start1, end1, start2, end2]):
+            print(f"Warning: Invalid time detected in exam schedules")
+            print(f"Times: {exam1.get('startTime')} - {exam1.get('endTime')} vs {exam2.get('startTime')} - {exam2.get('endTime')}")
             return True
 
         # Check if the time ranges overlap
         return schedules_overlap(start1, end1, start2, end2)
     except Exception as e:
         print(f"Error comparing exam schedules: {e}")
-        return True  # Assume conflict if parsing fails, to be safe
+        return True  # Assume conflict if comparison fails
 
 
 def check_exam_conflicts(section1, section2):
-    """Check for conflicts between mid-term and final exams of two sections."""
-    # Skip comparison if sections are the same or from the same course
-    if section1.get("sectionId") == section2.get("sectionId") or section1.get(
-        "courseCode"
-    ) == section2.get("courseCode"):
-        print(f"Skipping exam conflict check between sections of the same course or same section: {    section1.get('courseCode')}"
-        )
-        return []
+    """Check for exam conflicts between two sections."""
+    try:
+        # Get exam schedules from both sections
+        section1_schedule = section1.get("sectionSchedule", {})
+        section2_schedule = section2.get("sectionSchedule", {})
 
-    print(
-        f"=== Checking exam conflicts between {section1.get('courseCode')} Section {section1.get('sectionName')} ({section1.get('faculties')}) and {section2.get('courseCode')} Section {section2.get('sectionName')} ({section2.get('faculties')}) ==="
-    )
+        # Extract midterm exam details
+        mid1 = {
+            "examDate": section1_schedule.get("midExamDate"),
+            "startTime": section1_schedule.get("midExamStartTime"),
+            "endTime": section1_schedule.get("midExamEndTime")
+        }
+        
+        mid2 = {
+            "examDate": section2_schedule.get("midExamDate"),
+            "startTime": section2_schedule.get("midExamStartTime"),
+            "endTime": section2_schedule.get("midExamEndTime")
+        }
 
-    conflicts = []
+        # Extract final exam details
+        final1 = {
+            "examDate": section1_schedule.get("finalExamDate"),
+            "startTime": section1_schedule.get("finalExamStartTime"),
+            "endTime": section1_schedule.get("finalExamEndTime")
+        }
+        
+        final2 = {
+            "examDate": section2_schedule.get("finalExamDate"),
+            "startTime": section2_schedule.get("finalExamStartTime"),
+            "endTime": section2_schedule.get("finalExamEndTime")
+        }
 
-    # Get all exam schedules
-    exams1 = []
-    exams2 = []
+        conflicts = []
 
-    # Get section schedules, prioritizing nested structure
-    section1_schedule = section1.get("sectionSchedule", {})
-    section2_schedule = section2.get("sectionSchedule", {})
+        # Check midterm conflicts if both sections have midterm exams
+        if all(mid1.values()) and all(mid2.values()):
+            if exam_schedules_overlap(mid1, mid2):
+                conflicts.append({
+                    "type": "midterm",
+                    "section1": f"{section1.get('courseCode')} {section1.get('sectionName')}",
+                    "section2": f"{section2.get('courseCode')} {section2.get('sectionName')}",
+                    "date": mid1["examDate"],
+                    "time1": f"{mid1['startTime']} - {mid1['endTime']}",
+                    "time2": f"{mid2['startTime']} - {mid2['endTime']}"
+                })
 
-    # Add mid-term exams if they exist - Prioritize from sectionSchedule
-    mid1_date = section1_schedule.get("midExamDate") or section1.get("midExamDate")
-    mid1_start = section1_schedule.get("midExamStartTime") or section1.get(
-        "midExamStartTime"
-    )
-    mid1_end = section1_schedule.get("midExamEndTime") or section1.get("midExamEndTime")
+        # Check final exam conflicts if both sections have final exams
+        if all(final1.values()) and all(final2.values()):
+            if exam_schedules_overlap(final1, final2):
+                conflicts.append({
+                    "type": "final",
+                    "section1": f"{section1.get('courseCode')} {section1.get('sectionName')}",
+                    "section2": f"{section2.get('courseCode')} {section2.get('sectionName')}",
+                    "date": final1["examDate"],
+                    "time1": f"{final1['startTime']} - {final1['endTime']}",
+                    "time2": f"{final2['startTime']} - {final2['endTime']}"
+                })
 
-    if mid1_date and mid1_start and mid1_end:
-        print(
-            f"{section1.get('courseCode')} Midterm: {mid1_date} {mid1_start}-{mid1_end}"
-        )
-        exams1.append(
-            {
-                "examDate": mid1_date,
-                "startTime": mid1_start,
-                "endTime": mid1_end,
-                "type": "Mid",
-            }
-        )
-    else:
-        print(f"{section1.get('courseCode')} has no midterm exam data")
+        return conflicts
 
-    mid2_date = section2_schedule.get("midExamDate") or section2.get("midExamDate")
-    mid2_start = section2_schedule.get("midExamStartTime") or section2.get(
-        "midExamStartTime"
-    )
-    mid2_end = section2_schedule.get("midExamEndTime") or section2.get("midExamEndTime")
-
-    if mid2_date and mid2_start and mid2_end:
-        print(
-            f"{section2.get('courseCode')} Midterm: {mid2_date} {mid2_start}-{mid2_end}"
-        )
-        exams2.append(
-            {
-                "examDate": mid2_date,
-                "startTime": mid2_start,
-                "endTime": mid2_end,
-                "type": "Mid",
-            }
-        )
-    else:
-        print(f"{section2.get('courseCode')} has no midterm exam data")
-
-    # Add final exams if they exist - Prioritize from sectionSchedule
-    final1_date = section1_schedule.get("finalExamDate") or section1.get(
-        "finalExamDate"
-    )
-    final1_start = section1_schedule.get("finalExamStartTime") or section1.get(
-        "finalExamStartTime"
-    )
-    final1_end = section1_schedule.get("finalExamEndTime") or section1.get(
-        "finalExamEndTime"
-    )
-
-    if final1_date and final1_start and final1_end:
-        print(
-            f"{section1.get('courseCode')} Final: {final1_date} {final1_start}-{final1_end}"
-        )
-        exams1.append(
-            {
-                "examDate": final1_date,
-                "startTime": final1_start,
-                "endTime": final1_end,
-                "type": "Final",
-            }
-        )
-    else:
-        print(f"{section1.get('courseCode')} has no final exam data")
-
-    final2_date = section2_schedule.get("finalExamDate") or section2.get(
-        "finalExamDate"
-    )
-    final2_start = section2_schedule.get("finalExamStartTime") or section2.get(
-        "finalExamStartTime"
-    )
-    final2_end = section2_schedule.get("finalExamEndTime") or section2.get(
-        "finalExamEndTime"
-    )
-
-    if final2_date and final2_start and final2_end:
-        print(
-            f"{section2.get('courseCode')} Final: {final2_date} {final2_start}-{final2_end}"
-        )
-        exams2.append(
-            {
-                "examDate": final2_date,
-                "startTime": final2_start,
-                "endTime": final2_end,
-                "type": "Final",
-            }
-        )
-    else:
-        print(f"{section2.get('courseCode')} has no final exam data")
-
-    # Check for conflicts between all exam combinations
-    print("\nChecking for overlaps...")
-    for exam1 in exams1:
-        for exam2 in exams2:
-            print(
-                f"Comparing {section1.get('courseCode')} Section {section1.get('sectionName')} {exam1['type']} with "
-                f"{section2.get('courseCode')} Section {section2.get('sectionName')} {exam2['type']}"
-            )
-            if exam_schedules_overlap(exam1, exam2):
-                print(
-                    f"CONFLICT FOUND: {section1.get('courseCode')} Section {section1.get('sectionName')} {exam1['type']} and {section2.get('courseCode')} Section {section2.get('sectionName')} {exam2['type']} on {exam1['examDate']}"
-                )
-                conflicts.append(
-                    {
-                        "course1": section1["courseCode"],
-                        "course2": section2["courseCode"],
-                        "date": exam1["examDate"],
-                        "type1": exam1["type"],
-                        "type2": exam2["type"],
-                        "time1": f"{exam1['startTime']} - {exam1['endTime']}",
-                        "time2": f"{exam2['startTime']} - {exam2['endTime']}",
-                    }
-                )
-            else:
-                print(
-                    f"No conflict found between {section1.get('courseCode')} Section {section1.get('sectionName')} {exam1['type']} and {section2.get('courseCode')} Section {section2.get('sectionName')} {exam2['type']}"
-                )
-
-    if not conflicts:
-        print("No exam conflicts found between these sections")
-    else:
-        print(f"Found {len(conflicts)} conflicts!")
-
-    return conflicts
+    except Exception as e:
+        print(f"Error checking exam conflicts: {e}")
+        # Return a conflict to be safe
+        return [{
+            "type": "error",
+            "section1": f"{section1.get('courseCode')} {section1.get('sectionName')}",
+            "section2": f"{section2.get('courseCode')} {section2.get('sectionName')}",
+            "error": str(e)
+        }]
 
 
 def has_internal_conflicts(section):
@@ -862,7 +812,6 @@ def format_exam_conflicts_message(conflicts):
         if "Mid" in (conflict["type1"], conflict["type2"]):
             mid_conflicts[pair] = {
                 "date": conflict["date"],
-                # Using time1 as they overlap anyway
                 "time": conflict["time1"],
             }
         if "Final" in (conflict["type1"], conflict["type2"]):
@@ -1384,7 +1333,7 @@ def generate_routine():
 def try_manual_routine_generation(course_sections_map, selected_days, selected_times):
     """Fallback function for manual routine generation when AI fails."""
     try:
-        print("=== Manual Routine Generation (Conflicts Skipped) ===")
+        print("=== Manual Routine Generation ===")
 
         # Get all possible combinations first
         courses = list(course_sections_map.keys())
@@ -1393,26 +1342,28 @@ def try_manual_routine_generation(course_sections_map, selected_days, selected_t
         )
         print(f"Generated {len(all_combinations)} possible combinations")
 
-        # Skip exam conflict check as requested
-        # print("\n=== STEP 1: Checking Exam Conflicts ===")
-        # combinations_without_exam_conflicts = []
-        # for combination in all_combinations:
-        #     has_exam_conflicts, exam_error = check_exam_compatibility(combination)
-        #     if has_exam_conflicts:
-        #         continue # Skip combinations with exam conflicts
-        #     combinations_without_exam_conflicts.append(combination)
-
-        # if not combinations_without_exam_conflicts:
-        #     error_msg = "All possible combinations have exam conflicts.\n"
-        #     error_msg += ("Please try different sections to avoid exam schedule conflicts.")
-        #     return jsonify({"error": error_msg}), 200
-
-        # print(f"\nFound {len(combinations_without_exam_conflicts)} combinations without exam conflicts")
-
-        # Proceed directly to time and day constraints
-        print("=== STEP 1 (was STEP 2): Checking Time and Day Constraints ===")
-        # Iterate through all combinations directly
+        # STEP 1: Check exam conflicts
+        print("\n=== STEP 1: Checking Exam Conflicts ===")
+        combinations_without_exam_conflicts = []
         for combination in all_combinations:
+            has_exam_conflicts, exam_error = check_exam_compatibility(combination)
+            if has_exam_conflicts:
+                print(f"✗ Exam conflict found: {exam_error}")
+                return jsonify({"error": exam_error}), 200  # Return exam conflict error immediately
+            print("✓ No exam conflicts found")
+            combinations_without_exam_conflicts.append(combination)
+
+        if not combinations_without_exam_conflicts:
+            error_msg = "All possible combinations have exam conflicts.\n"
+            error_msg += "Please try different sections to avoid exam schedule conflicts."
+            return jsonify({"error": error_msg}), 200
+
+        print(f"\nFound {len(combinations_without_exam_conflicts)} combinations without exam conflicts")
+
+        # STEP 2: Check time and day constraints
+        print("\n=== STEP 2: Checking Time and Day Constraints ===")
+        # Iterate through combinations without exam conflicts
+        for combination in combinations_without_exam_conflicts:
             print("\nChecking combination for time/day constraints:")
             for section in combination:
                 if not isinstance(section, dict):
