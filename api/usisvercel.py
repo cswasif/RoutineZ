@@ -34,10 +34,10 @@ try:
     print("\n=== Configuring Gemini API ===")
     import google.generativeai as genai
     print("✓ google.generativeai package imported successfully")
-    genai.configure(api_key=GOOGLE_API_KEY)
+    genai.configure(api_key="AIzaSyC9fjJ5afylqK_RzxAWUwI1Y9yN06BJCI0")
     print("✓ genai.configure called with API key")
     # Create a single model instance to be reused
-    gemini_model = genai.GenerativeModel("gemini-pro")
+    gemini_model = genai.GenerativeModel("gemini-2.0-flash")
     print("✓ GenerativeModel instance created")
     print("Gemini API configured with shared model instance.")
     gemini_configured = True
@@ -1451,10 +1451,30 @@ def generate_routine():
 
             # If using AI, pass to AI routine generation
             if use_ai:
-                return try_ai_routine_generation(final_combinations[0], days, times, commute_preference)
+                # Sort combinations by campus days based on commute preference
+                combinations_with_days = []
+                for combination in final_combinations:
+                    days_count, days_list = calculate_campus_days(combination)
+                    combinations_with_days.append({
+                        "combination": combination,
+                        "campus_days": days_count,
+                        "days_list": days_list
+                    })
+
+                # Sort based on commute preference
+                if commute_preference == "far":
+                    # For "Live Far", sort by ascending campus days (fewer days is better)
+                    combinations_with_days.sort(key=lambda x: x["campus_days"])
+                else:
+                    # For "Live Near" or no preference, sort by descending campus days (more days is better)
+                    combinations_with_days.sort(key=lambda x: x["campus_days"], reverse=True)
+
+                # Use the best combination
+                best_combination = combinations_with_days[0]["combination"]
+                return try_ai_routine_generation(best_combination, days, times, commute_preference)
 
             # Return the first valid combination
-            return jsonify(final_combinations[0]), 200
+            return jsonify({"routine": final_combinations[0]}), 200
 
     except Exception as e:
         print(f"Error in generate_routine: {str(e)}")
@@ -1462,22 +1482,58 @@ def generate_routine():
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
 def try_ai_routine_generation(valid_combination, selected_days, selected_times, commute_preference):
+    """AI-assisted routine generation using Gemini AI."""
     try:
-        print("\n=== AI Routine Generation ===")
-        
-        # Since we already have a valid combination (no exam conflicts),
-        # proceed with AI optimization
-        try:
-            ai_result = optimize_routine_with_ai(valid_combination, selected_days, selected_times, commute_preference)
-            return jsonify(ai_result), 200
-        except Exception as ai_error:
-            print(f"AI optimization failed: {str(ai_error)}")
-            # If AI fails, return the valid combination we already have
-            return jsonify(valid_combination), 200
+        print("\n=== AI Routine Generation with Gemini ===")
+
+        # Format the schedules for the response
+        for section in valid_combination:
+            section_schedules = []
+            if section.get("sectionSchedule") and section["sectionSchedule"].get("classSchedules"):
+                for sched in section["sectionSchedule"]["classSchedules"]:
+                    if sched["day"].upper() in selected_days:
+                        section_schedules.append({
+                            "type": "class",
+                            "day": sched["day"].upper(),
+                            "start": TimeUtils.time_to_minutes(sched["startTime"]),
+                            "end": TimeUtils.time_to_minutes(sched["endTime"]),
+                            "schedule": sched,
+                            "formattedTime": f"{sched['startTime']} - {sched['endTime']}"
+                        })
+
+            if section.get("labSchedules"):
+                if isinstance(section["labSchedules"], list):
+                    for lab in section["labSchedules"]:
+                        if lab.get("day") and lab["day"].upper() in selected_days:
+                            section_schedules.append({
+                                "type": "lab",
+                                "day": lab["day"].upper(),
+                                "start": TimeUtils.time_to_minutes(lab["startTime"]),
+                                "end": TimeUtils.time_to_minutes(lab["endTime"]),
+                                "schedule": lab,
+                                "formattedTime": f"{lab['startTime']} - {lab['endTime']}"
+                            })
+                elif isinstance(section["labSchedules"], dict) and section["labSchedules"].get("classSchedules"):
+                    for lab_schedule in section["labSchedules"]["classSchedules"]:
+                        if lab_schedule["day"].upper() in selected_days:
+                            section_schedules.append({
+                                "type": "lab",
+                                "day": lab_schedule["day"].upper(),
+                                "start": TimeUtils.time_to_minutes(lab_schedule["startTime"]),
+                                "end": TimeUtils.time_to_minutes(lab_schedule["endTime"]),
+                                "schedule": lab_schedule,
+                                "formattedTime": f"{lab_schedule['startTime']} - {lab_schedule['endTime']}"
+                            })
+
+            section["formattedSchedules"] = section_schedules
+
+        # Always include feedback in the response
+        feedback = get_routine_feedback_for_api(valid_combination, commute_preference)
+        return jsonify({"routine": valid_combination, "feedback": feedback}), 200
 
     except Exception as e:
-        print(f"Error in try_ai_routine_generation: {str(e)}")
-        return jsonify({"error": "An error occurred during AI routine generation. Please try again."}), 500
+        print(f"Error in AI routine generation: {e}")
+        return jsonify({"error": "Error generating routine with AI. Please try manual generation."}), 200
 
 
 def auto_fix_json(s):
@@ -1524,7 +1580,7 @@ def ask_ai():
         return jsonify({"answer": "Please provide a question."}), 400
 
     try:
-        model = genai.GenerativeModel("gemini-pro")  # Changed to experimental model
+        model = genai.GenerativeModel("gemini-2.0-flash")  # Using flash model for better performance
 
         # Create a context-aware prompt
         prompt = (
@@ -1587,7 +1643,7 @@ def get_routine_feedback_ai():
             "Start with 'Score: X/10'"
         )
 
-        model = genai.GenerativeModel("gemini-pro")  # Changed to experimental model
+        model = genai.GenerativeModel("gemini-2.0-flash")  # Using flash model for better performance
         response = model.generate_content(prompt)
         feedback = response.text.strip()
 
@@ -1641,7 +1697,7 @@ def check_exam_conflicts_ai():
                 "Start with 'Score: 10/10' if there are no conflicts."
             )
 
-            model = genai.GenerativeModel("gemini-pro")  # Changed to experimental model
+            model = genai.GenerativeModel("gemini-2.0-flash")  # Using flash model for better performance
             response = model.generate_content(prompt)
             analysis = response.text.strip()
 
@@ -1667,7 +1723,7 @@ def check_exam_conflicts_ai():
                 "Start with 'Score: X/10'"
             )
 
-            model = genai.GenerativeModel("gemini-pro")  # Changed to experimental model
+            model = genai.GenerativeModel("gemini-2.0-flash")  # Using flash model for better performance
             response = model.generate_content(prompt)
             analysis = response.text.strip()
 
@@ -1879,25 +1935,6 @@ def get_exam_schedule():
     return jsonify({"error": "Section not found"}), 404
 
 
-def try_ai_routine_generation(valid_combination, selected_days, selected_times, commute_preference):
-    try:
-        print("\n=== AI Routine Generation ===")
-        
-        # Since we already have a valid combination (no exam conflicts),
-        # proceed with AI optimization
-        try:
-            ai_result = optimize_routine_with_ai(valid_combination, selected_days, selected_times, commute_preference)
-            return jsonify(ai_result), 200
-        except Exception as ai_error:
-            print(f"AI optimization failed: {str(ai_error)}")
-            # If AI fails, return the valid combination we already have
-            return jsonify(valid_combination), 200
-
-    except Exception as e:
-        print(f"Error in try_ai_routine_generation: {str(e)}")
-        return jsonify({"error": "An error occurred during AI routine generation. Please try again."}), 500
-
-
 def calculate_routine_score(
     combination, selected_days, selected_times, commute_preference
 ):
@@ -2000,20 +2037,16 @@ def calculate_routine_score(
 
 
 def get_routine_feedback_for_api(routine, commute_preference=None):
-    """Generate AI feedback for a routine."""
     try:
-        print("\n=== Generating AI Feedback ===")
-        
+        import google.generativeai as genai
+
+        model = genai.GenerativeModel("gemini-2.0-flash")
         # Get the days used in the routine
         days_used = get_days_used_in_routine(routine)
         days_str = ", ".join(days_used)
         num_days = len(days_used)
-        
-        print(f"Routine spans {num_days} days: {days_str}")
-        
         commute_text = ""
         if commute_preference:
-            print(f"Analyzing for commute preference: {commute_preference}")
             commute_text = f"The student's commute preference is '{commute_preference}'.\n"
             if commute_preference.lower() == "far":
                 commute_text += (
@@ -2034,27 +2067,28 @@ def get_routine_feedback_for_api(routine, commute_preference=None):
 
         prompt = (
             f"Look at this routine:\n{json.dumps(routine)}\n\n"
+            f"This routine requires being on campus for exactly {num_days} day(s): {days_str}.\n"
+            f"The student's commute preference is '{commute_preference}'.\n"
+            "When writing your feedback, always use the number of days provided above, and do not estimate or guess the number of days from the routine data.\n"
+            "Assume all classes and labs are in-person (physical) unless explicitly marked as 'Online'. Do NOT say 'It's all online!' or make assumptions about online/physical mode.\n"
             "First, rate this routine out of 10.\n"
             "Then give me 2-3 quick points about:\n"
-            "• How's your schedule looking?\n"
-            "• What's good and what needs work?\n"
+            "• Schedule overview\n"
+            "• What works well\n"
+            "• Areas for improvement\n"
             "Keep it casual and under 10 words per point.\n"
-            "Start with 'Score: X/10'"
+            "Format your response exactly like this:\n"
+            "Score: X/10\n"
+            "Schedule: [brief overview]\n"
+            "Good: [what works well]\n"
+            "Needs Work: [areas to improve]"
         )
-
-        print("\nGenerating feedback with Gemini...")
-        if gemini_model:
-            response = gemini_model.generate_content(prompt)
-            feedback = response.text.strip()
-        else:
-            feedback = "AI feedback unavailable"
-        print(f"\nAI Feedback:\n{feedback}")
-        
+        response = model.generate_content(prompt)
+        feedback = response.text.strip()
         return feedback
-        
     except Exception as e:
-        print(f"\n❌ Error generating AI feedback: {e}")
-        return "Unable to generate AI feedback at this time."
+        print(f"Gemini feedback error: {e}")
+        return f"Gemini error: {e}"
 
 
 def get_days_used_in_routine(routine):

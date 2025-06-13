@@ -251,4 +251,147 @@ For any questions, issues, or feedback, please open an issue on the GitHub repos
 -   [ ] Integration of course prerequisites checking
 -   [ ] Analysis of GPA impact based on routine choices
 -   [ ] Export routine to other formats (e.g., PDF, iCal)
--   [ ] Multi-language support 
+-   [ ] Multi-language support
+
+# USIS API Documentation
+
+## Overview
+The USIS API is a Flask-based backend service that provides course scheduling and routine generation functionality with AI assistance. It uses Google's Gemini AI for intelligent routine optimization and feedback.
+
+## Core Features
+- Course and section information retrieval
+- AI-assisted routine generation
+- Exam conflict detection
+- Schedule compatibility checking
+- Time slot management
+- Lab schedule handling
+- AI-powered routine feedback
+
+## API Endpoints
+
+### Course Management
+- `GET /api/courses` - Get list of all available courses
+- `GET /api/course_details` - Get detailed information about a specific course
+- `GET /api/faculty` - Get list of all faculty members
+- `GET /api/faculty_for_courses` - Get faculty members for specific courses
+- `GET /api/exam_schedule` - Get exam schedule for a specific course section
+
+### Routine Generation
+- `POST /api/routine` - Generate a course routine with optional AI optimization
+- `POST /api/ask_ai` - Get AI assistance for routine-related questions
+- `POST /api/get_routine_feedback_ai` - Get AI feedback on a generated routine
+- `POST /api/check_exam_conflicts_ai` - Check and analyze exam conflicts
+- `POST /api/check_time_conflicts_ai` - Check and analyze time conflicts
+
+## Key Functions
+
+### Time Management
+```python
+class TimeUtils:
+    @staticmethod
+    def convert_to_bd_time(time_str)
+    # Converts time string to Bangladesh timezone
+    
+    @staticmethod
+    def time_to_minutes(tstr)
+    # Converts time string to minutes (handles both 24-hour and 12-hour formats)
+    
+    @staticmethod
+    def minutes_to_time(minutes)
+    # Converts minutes to time string in 24-hour format (HH:MM:SS)
+```
+
+### Exam Conflict Management
+```python
+class ExamConflictChecker:
+    @staticmethod
+    def check_conflicts(sections)
+    # Checks for conflicts between mid-term and final exams of sections
+    
+    @staticmethod
+    def format_conflict_message(conflicts)
+    # Formats exam conflicts message in a concise way
+```
+
+### Schedule Compatibility Functions
+```python
+def check_schedule_compatibility(schedule1, schedule2)
+# Checks if two schedules are compatible (no time conflicts)
+
+def is_valid_combination(sections)
+# Checks if a combination of sections has any schedule conflicts
+
+def filter_section_by_time(section, selected_times)
+# Checks if section schedules fit within selected time ranges
+```
+
+### Lab Schedule Management
+```python
+def get_lab_schedule(section)
+# Extracts and formats lab schedule information, supporting both array and nested object formats
+
+def get_lab_schedules_flat(section)
+# Normalizes labSchedules to a flat array of schedules
+```
+
+### AI Integration
+```python
+def try_ai_routine_generation(valid_combination, selected_days, selected_times, commute_preference)
+# Generates AI-assisted routine using Gemini AI
+
+def get_routine_feedback_for_api(routine, commute_preference=None)
+# Gets AI feedback on a generated routine
+```
+
+### Scoring and Optimization
+```python
+def calculate_routine_score(combination, selected_days, selected_times, commute_preference)
+# Calculates a score for a routine combination based on various factors
+
+def calculate_campus_days(combination)
+# Calculates the total number of unique days a student needs to be on campus
+```
+
+## Environment Setup
+Required environment variables:
+- `GOOGLE_API_KEY` - Google Gemini AI API key
+- `PORT` - Server port (default: 5000)
+
+## Dependencies
+- Flask
+- Flask-CORS
+- google.generativeai
+- pytz
+- requests
+- demjson3
+
+## Error Handling
+The API includes comprehensive error handling for:
+- Invalid input data
+- Missing environment variables
+- API connection issues
+- Schedule conflicts
+- Time format issues
+- Lab schedule inconsistencies
+
+## Best Practices
+1. Always check exam conflicts before time conflicts
+2. Handle both class and lab schedules appropriately
+3. Consider commute preferences in routine optimization
+4. Validate time formats and ranges
+5. Use proper error handling for API responses
+
+## Response Formats
+All API endpoints return JSON responses with the following structure:
+- Success: `{"data": {...}}` or `{"routine": [...], "feedback": "..."}`
+- Error: `{"error": "error message"}`
+
+## Time Slot Format
+Time slots are handled in both 24-hour and 12-hour formats:
+- 24-hour: "HH:MM:SS"
+- 12-hour: "HH:MM AM/PM"
+
+## Lab Schedule Format
+Supports two formats:
+1. Array format: `[{day, startTime, endTime}, ...]`
+2. Nested object: `{classSchedules: [{day, startTime, endTime}, ...]}` 
