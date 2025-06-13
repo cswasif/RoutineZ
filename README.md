@@ -48,6 +48,22 @@ RoutineZ uses the powerful [ConnAPI](https://connapi.vercel.app) to provide:
 - Real-time section data
 - Accurate exam schedules
 
+### Real-time Data Fetching Mechanism
+Every interaction with RoutineZ guarantees the most current data:
+- **Zero Caching**: No data is cached on the server - every request fetches fresh data
+- **Direct API Integration**: Live connection to ConnAPI for real-time updates
+- **Automatic Refresh**: Fresh data is fetched for:
+  - Course listings
+  - Section availability
+  - Seat status
+  - Exam schedules
+  - Routine generation
+- **Reliability Features**:
+  - Multiple retry attempts on API calls
+  - Connection status monitoring
+  - Error handling and recovery
+  - Timeout protection (30-second window)
+
 ### Advanced Algorithms
 - **Smart Conflict Resolution**: Multi-layered conflict detection for classes, labs, and exams
 - **Optimization Engine**: Considers multiple factors for the best possible schedule
@@ -95,7 +111,7 @@ The underlying API provides:
 1. **Time Efficiency**: Save hours of manual schedule planning
 2. **Error Prevention**: Eliminate human error in schedule creation
 3. **Smart Optimization**: Get the best possible schedule for your needs
-4. **Real-time Data**: Always work with the latest course information
+4. **Real-time Data**: Always work with the latest course information - every single interaction fetches fresh data directly from BracU Connect
 5. **AI-Powered**: Benefit from intelligent schedule analysis
 6. **User-Friendly**: Easy to use for all students
 7. **Mobile Ready**: Access your schedule anywhere
@@ -476,43 +492,4 @@ def calculate_campus_days(combination)
 ## Environment Setup
 Required environment variables:
 - `GOOGLE_API_KEY` - Google Gemini AI API key
-- `PORT` - Server port (default: 5000)
-
-## Dependencies
-- Flask
-- Flask-CORS
-- google.generativeai
-- pytz
-- requests
-- demjson3
-
-## Error Handling
-The API includes comprehensive error handling for:
-- Invalid input data
-- Missing environment variables
-- API connection issues
-- Schedule conflicts
-- Time format issues
-- Lab schedule inconsistencies
-
-## Best Practices
-1. Always check exam conflicts before time conflicts
-2. Handle both class and lab schedules appropriately
-3. Consider commute preferences in routine optimization
-4. Validate time formats and ranges
-5. Use proper error handling for API responses
-
-## Response Formats
-All API endpoints return JSON responses with the following structure:
-- Success: `{"data": {...}}` or `{"routine": [...], "feedback": "..."}`
-- Error: `{"error": "error message"}`
-
-## Time Slot Format
-Time slots are handled in both 24-hour and 12-hour formats:
-- 24-hour: "HH:MM:SS"
-- 12-hour: "HH:MM AM/PM"
-
-## Lab Schedule Format
-Supports two formats:
-1. Array format: `[{day, startTime, endTime}, ...]`
-2. Nested object: `{classSchedules: [{day, startTime, endTime}, ...]}` 
+- `
