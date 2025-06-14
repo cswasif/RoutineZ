@@ -11,6 +11,7 @@ import os
 from itertools import product
 import time
 import traceback
+import logging
 
 # # print("\n=== Loading Environment Variables ===")
 # Debug: Print all environment variables
@@ -29,6 +30,10 @@ else:
 
 app = Flask(__name__)
 CORS(app)
+
+# Disable Flask's default access logs
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR)
 
 # Configure Gemini API
 gemini_configured = False
@@ -2152,7 +2157,13 @@ def format_section_times(section):
 # ... existing code ...
 
 if __name__ == "__main__":
+    import logging
+    # Disable Flask's default access logs
+    log = logging.getLogger('werkzeug')
+    log.setLevel(logging.ERROR)
+    
+    # Run the app with logging disabled
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)  # Production mode
+    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)  # Production mode with logging disabled
 
 app = app
