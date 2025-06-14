@@ -42,7 +42,7 @@ RoutineZ is not just another course scheduler - it's your intelligent companion 
 ## 🛠️ Technical Features
 
 ### Real-time Data Integration
-RoutineZ uses the powerful [ConnAPI](https://connapi.vercel.app) to provide:
+RoutineZ uses the powerful [ConnAPI](https://connectlive-nine.vercel.app) to provide:
 - Live course availability
 - Up-to-date faculty information
 - Real-time section data
@@ -120,7 +120,7 @@ The underlying API provides:
 
 For any questions or support:
 - Visit our [live demo](https://routinez.vercel.app)
-- Check the API status at [ConnAPI](https://connapi.vercel.app)
+- Check the API status at [ConnAPI](https://connectlive-nine.vercel.app)
 - Contact the development team through the application
 
 ## 📝 License
