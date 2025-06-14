@@ -437,162 +437,60 @@ def exam_schedules_overlap(exam1, exam2):
 
 
 def check_exam_conflicts(section1, section2):
-    """Check for conflicts between mid-term and final exams of two sections."""
-    # Skip comparison if sections are the same or from the same course
-    if section1.get("sectionId") == section2.get("sectionId") or section1.get(
-        "courseCode"
-    ) == section2.get("courseCode"):
-        # print(
-        #     f"Skipping exam conflict check between sections of the same course or same section: {section1.get('courseCode')}"
-        # )
-        return []
-
-    # print(
-    #     f"=== Checking exam conflicts between {section1.get('courseCode')} Section {section1.get('sectionName')} ({section1.get('faculties')}) and {section2.get('courseCode')} Section {section2.get('sectionName')} ({section2.get('faculties')}) ==="
-    # )
-
+    """Check for exam conflicts between two sections."""
     conflicts = []
 
-    # Get all exam schedules
-    exams1 = []
-    exams2 = []
+    # Skip comparison if sections are the same
+    if section1.get("sectionId") == section2.get("sectionId"):
+        return []
 
-    # Get section schedules, prioritizing nested structure
-    section1_schedule = section1.get("sectionSchedule", {})
-    section2_schedule = section2.get("sectionSchedule", {})
+    # Get exam schedules
+    schedule1 = section1.get("sectionSchedule", {})
+    schedule2 = section2.get("sectionSchedule", {})
 
-    # Add mid-term exams if they exist - Prioritize from sectionSchedule
-    mid1_date = section1_schedule.get("midExamDate") or section1.get("midExamDate")
-    mid1_start = section1_schedule.get("midExamStartTime") or section1.get(
-        "midExamStartTime"
-    )
-    mid1_end = section1_schedule.get("midExamEndTime") or section1.get("midExamEndTime")
-
-    if mid1_date and mid1_start and mid1_end:
-        # print(
-        #     f"{section1.get('courseCode')} Midterm: {mid1_date} {mid1_start}-{mid1_end}"
-        # )
-        exams1.append(
-            {
-                "examDate": mid1_date,
-                "startTime": mid1_start,
-                "endTime": mid1_end,
-                "type": "Mid",
+    # Check midterm exam conflicts
+    if schedule1.get("midExamDate") and schedule2.get("midExamDate"):
+        if normalize_date(schedule1["midExamDate"]) == normalize_date(schedule2["midExamDate"]):
+            exam1 = {
+                "start": schedule1.get("midExamStartTime"),
+                "end": schedule1.get("midExamEndTime")
             }
-        )
-    else:
-        # print(f"{section1.get('courseCode')} has no midterm exam data")
-        pass
-
-    mid2_date = section2_schedule.get("midExamDate") or section2.get("midExamDate")
-    mid2_start = section2_schedule.get("midExamStartTime") or section2.get(
-        "midExamStartTime"
-    )
-    mid2_end = section2_schedule.get("midExamEndTime") or section2.get("midExamEndTime")
-
-    if mid2_date and mid2_start and mid2_end:
-        # print(
-        #     f"{section2.get('courseCode')} Midterm: {mid2_date} {mid2_start}-{mid2_end}"
-        # )
-        exams2.append(
-            {
-                "examDate": mid2_date,
-                "startTime": mid2_start,
-                "endTime": mid2_end,
-                "type": "Mid",
+            exam2 = {
+                "start": schedule2.get("midExamStartTime"),
+                "end": schedule2.get("midExamEndTime")
             }
-        )
-    else:
-        pass
-        # print(f"{section2.get('courseCode')} has no midterm exam data")
-
-    # Add final exams if they exist - Prioritize from sectionSchedule
-    final1_date = section1_schedule.get("finalExamDate") or section1.get(
-        "finalExamDate"
-    )
-    final1_start = section1_schedule.get("finalExamStartTime") or section1.get(
-        "finalExamStartTime"
-    )
-    final1_end = section1_schedule.get("finalExamEndTime") or section1.get(
-        "finalExamEndTime"
-    )
-
-    if final1_date and final1_start and final1_end:
-        # print(
-        #     f"{section1.get('courseCode')} Final: {final1_date} {final1_start}-{final1_end}"
-        # )
-        exams1.append(
-            {
-                "examDate": final1_date,
-                "startTime": final1_start,
-                "endTime": final1_end,
-                "type": "Final",
-            }
-        )
-    else:
-        pass
-        # print(f"{section1.get('courseCode')} has no final exam data")
-
-    final2_date = section2_schedule.get("finalExamDate") or section2.get(
-        "finalExamDate"
-    )
-    final2_start = section2_schedule.get("finalExamStartTime") or section2.get(
-        "finalExamStartTime"
-    )
-    final2_end = section2_schedule.get("finalExamEndTime") or section2.get(
-        "finalExamEndTime"
-    )
-
-    if final2_date and final2_start and final2_end:
-        # print(
-        #     f"{section2.get('courseCode')} Final: {final2_date} {final2_start}-{final2_end}"
-        # )
-        exams2.append(
-            {
-                "examDate": final2_date,
-                "startTime": final2_start,
-                "endTime": final2_end,
-                "type": "Final",
-            }
-        )
-    else:
-        pass
-        # print(f"{section2.get('courseCode')} has no final exam data")
-
-    # Check for conflicts between all exam combinations
-    # print("\nChecking for overlaps...")
-    for exam1 in exams1:
-        for exam2 in exams2:
-            # print(
-            #     f"Comparing {section1.get('courseCode')} Section {section1.get('sectionName')} {exam1['type']} with {section2.get('courseCode')} Section {section2.get('sectionName')} {exam2['type']}"
-            # )
             if exam_schedules_overlap(exam1, exam2):
-                # print(
-                #     f"CONFLICT FOUND: {section1.get('courseCode')} Section {section1.get('sectionName')} {exam1['type']} and {section2.get('courseCode')} Section {section2.get('sectionName')} {exam2['type']} on {exam1['examDate']}"
-                # )
-                conflicts.append(
-                    {
-                        "course1": section1["courseCode"],
-                        "course2": section2["courseCode"],
-                        "date": exam1["examDate"],
-                        "type1": exam1["type"],
-                        "type2": exam2["type"],
-                        "time1": f"{exam1['startTime']} - {exam1['endTime']}",
-                        "time2": f"{exam2['startTime']} - {exam2['endTime']}",
-                    }
-                )
-            else:
-                pass
-                # print(
-                #     f"No conflict found between {section1.get('courseCode')} Section {section1.get('sectionName')} {exam1['type']} and {section2.get('courseCode')} Section {section2.get('sectionName')} {exam2['type']}"
-                # )
+                conflicts.append({
+                    "course1": section1.get("courseCode"),
+                    "course2": section2.get("courseCode"),
+                    "type1": "Mid",
+                    "type2": "Mid",
+                    "date": schedule1["midExamDate"],
+                    "time1": f"{schedule1.get('midExamStartTime')} - {schedule1.get('midExamEndTime')}",
+                    "time2": f"{schedule2.get('midExamStartTime')} - {schedule2.get('midExamEndTime')}"
+                })
 
-    if not conflicts:
-        pass
-        # print("No exam conflicts found between these sections")
-    else:
-        pass
-        # print(f"Found {len(conflicts)} conflicts!")
+    # Check final exam conflicts
+    if schedule1.get("finalExamDate") and schedule2.get("finalExamDate"):
+        if normalize_date(schedule1["finalExamDate"]) == normalize_date(schedule2["finalExamDate"]):
+            exam1 = {
+                "start": schedule1.get("finalExamStartTime"),
+                "end": schedule1.get("finalExamEndTime")
+            }
+            exam2 = {
+                "start": schedule2.get("finalExamStartTime"),
+                "end": schedule2.get("finalExamEndTime")
+            }
+            if exam_schedules_overlap(exam1, exam2):
+                conflicts.append({
+                    "course1": section1.get("courseCode"),
+                    "course2": section2.get("courseCode"),
+                    "type1": "Final",
+                    "type2": "Final",
+                    "date": schedule1["finalExamDate"],
+                    "time1": f"{schedule1.get('finalExamStartTime')} - {schedule1.get('finalExamEndTime')}",
+                    "time2": f"{schedule2.get('finalExamStartTime')} - {schedule2.get('finalExamEndTime')}"
+                })
 
     return conflicts
 
@@ -963,24 +861,20 @@ def get_required_days_for_course(sections):
 
 def check_exam_compatibility(sections):
     """Check if a set of sections has any exam conflicts. Returns (has_conflicts, error_message)."""
-    # print("\n=== Checking Exam Compatibility for All Sections ===")
     exam_conflicts = []
+    
+    # Check all possible pairs of sections, including different sections of the same course
     for i, section1 in enumerate(sections):
         for j in range(i + 1, len(sections)):
             section2 = sections[j]
             conflicts = check_exam_conflicts(section1, section2)
             if conflicts:
-                # print(
-                #     f"Found conflicts between {section1.get('courseCode')} and {section2.get('courseCode')}"
-                # )
                 exam_conflicts.extend(conflicts)
 
     if exam_conflicts:
         error_message = format_exam_conflicts_message(exam_conflicts)
-        # print(f"\nExam conflicts found:\n{error_message}")
         return True, error_message
 
-    # print("No exam conflicts found in any combination")
     return False, None
 
 
