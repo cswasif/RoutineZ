@@ -129,8 +129,19 @@ def get_courses():
             name = section.get("courseName", code)
             available_seats = section.get("capacity", 0) - section.get("consumedSeat", 0)
             if code not in courses_data:
-                courses_data[code] = {"code": code, "name": name, "totalAvailableSeats": 0}
+                courses_data[code] = {
+                    "code": code, 
+                    "name": name, 
+                    "totalAvailableSeats": 0,
+                    "sections": []
+                }
             courses_data[code]["totalAvailableSeats"] += available_seats
+            # Add section info
+            courses_data[code]["sections"].append({
+                "sectionName": section.get("sectionName"),
+                "availableSeats": available_seats
+            })
+            
         courses_list = list(courses_data.values())
         return jsonify(courses_list)
     except Exception as e:
@@ -405,7 +416,6 @@ def exam_schedules_overlap(exam1, exam2):
                             dt = datetime.strptime(time_str.strip(), "%I:%M:%S %p")
                             return dt.hour * 60 + dt.minute
                         except ValueError:
-                            # print(f"Warning: Could not parse 12-hour time: {time_str}")
                             return 0
                 else:
                     # 24-hour format
@@ -417,27 +427,22 @@ def exam_schedules_overlap(exam1, exam2):
                             dt = datetime.strptime(time_str.strip(), "%H:%M")
                             return dt.hour * 60 + dt.minute
                         except ValueError:
-                            # print(f"Warning: Could not parse 24-hour time: {time_str}")
                             return 0
             return 0
 
-        start1 = convert_time(exam1.get("startTime", ""))
-        end1 = convert_time(exam1.get("endTime", ""))
-        start2 = convert_time(exam2.get("startTime", ""))
-        end2 = convert_time(exam2.get("endTime", ""))
+        # Get start and end times from the correct fields
+        start1 = convert_time(exam1.get("start", ""))
+        end1 = convert_time(exam1.get("end", ""))
+        start2 = convert_time(exam2.get("start", ""))
+        end2 = convert_time(exam2.get("end", ""))
 
         # If any of the times are invalid (0), return True to be safe
         if start1 == 0 or end1 == 0 or start2 == 0 or end2 == 0:
-            # print(f"Warning: Invalid exam time detected. Assuming conflict for safety.")
-            # print(
-            #     f"Times: {exam1.get('startTime')} - {exam1.get('endTime')} vs {exam2.get('startTime')} - {exam2.get('endTime')}"
-            # )
             return True
 
         # Check if the time ranges overlap
-        return schedules_overlap(start1, end1, start2, end2)
+        return (start1 < end2 and end1 > start2) or (start2 < end1 and end2 > start1)
     except Exception as e:
-        # print(f"Error comparing exam schedules: {e}")
         return True  # Assume conflict if parsing fails, to be safe
 
 
@@ -457,10 +462,12 @@ def check_exam_conflicts(section1, section2):
     if schedule1.get("midExamDate") and schedule2.get("midExamDate"):
         if normalize_date(schedule1["midExamDate"]) == normalize_date(schedule2["midExamDate"]):
             exam1 = {
+                "examDate": schedule1["midExamDate"],
                 "start": schedule1.get("midExamStartTime"),
                 "end": schedule1.get("midExamEndTime")
             }
             exam2 = {
+                "examDate": schedule2["midExamDate"],
                 "start": schedule2.get("midExamStartTime"),
                 "end": schedule2.get("midExamEndTime")
             }
@@ -479,10 +486,12 @@ def check_exam_conflicts(section1, section2):
     if schedule1.get("finalExamDate") and schedule2.get("finalExamDate"):
         if normalize_date(schedule1["finalExamDate"]) == normalize_date(schedule2["finalExamDate"]):
             exam1 = {
+                "examDate": schedule1["finalExamDate"],
                 "start": schedule1.get("finalExamStartTime"),
                 "end": schedule1.get("finalExamEndTime")
             }
             exam2 = {
+                "examDate": schedule2["finalExamDate"],
                 "start": schedule2.get("finalExamStartTime"),
                 "end": schedule2.get("finalExamEndTime")
             }

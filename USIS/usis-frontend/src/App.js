@@ -658,26 +658,42 @@ const CourseOption = ({ innerRef, innerProps, data, isSelected }) => (
 // --- Make Routine Page ---
 const MakeRoutinePage = () => {
   const [routineCourses, setRoutineCourses] = useState([]);
-  const [routineDays, setRoutineDays] = useState(DAYS.map(d => ({ value: d, label: d }))); // Reverted to include all days
-  const [routineResult, setRoutineResult] = useState(null);
+  const [availableCourses, setAvailableCourses] = useState([]); // Add this state
   const [availableFacultyByCourse, setAvailableFacultyByCourse] = useState({});
   const [selectedFacultyByCourse, setSelectedFacultyByCourse] = useState({});
+  const [selectedSectionsByFaculty, setSelectedSectionsByFaculty] = useState({});
+  const [courseSearchTerm, setCourseSearchTerm] = useState('');
+  const [isCourseSuggestionsOpen, setIsCourseSuggestionsOpen] = useState(false);
+
+  // Add useEffect to fetch courses
+  useEffect(() => {
+    const fetchCourses = async () => {
+      try {
+        const response = await axios.get(`${API_BASE}/courses`);
+        setAvailableCourses(response.data);
+      } catch (error) {
+        console.error('Error fetching courses:', error);
+      }
+    };
+    fetchCourses();
+  }, []);
+
+  const [routineDays, setRoutineDays] = useState(DAYS.map(d => ({ value: d, label: d }))); // Reverted to include all days
+  const [routineResult, setRoutineResult] = useState(null);
+  const [routineFaculty, setRoutineFaculty] = useState(null);
+  const [routineFacultyOptions, setRoutineFacultyOptions] = useState([]);
   const [routineTimes, setRoutineTimes] = useState(TIME_SLOTS);
   const [routineError, setRoutineError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [aiFeedback, setAiFeedback] = useState(null);
   const [commutePreference, setCommutePreference] = useState("");
-  const [selectedSectionsByFaculty, setSelectedSectionsByFaculty] = useState({});
   const [usedAI, setUsedAI] = useState(false);
   const [courseOptions, setCourseOptions] = useState([]);
-  const [courseSearchTerm, setCourseSearchTerm] = useState('');
   const [filteredCourseOptions, setFilteredCourseOptions] = useState([]);
-  const [isCourseSuggestionsOpen, setIsCourseSuggestionsOpen] = useState(false);
-  const routineGridRef = useRef(null);
+  const [isDaySuggestionsOpen, setIsDaySuggestionsOpen] = useState(false); // Day suggestions list visibility
 
   const [daySearchTerm, setDaySearchTerm] = useState(''); // Input value for day search
   const [filteredDayOptions, setFilteredDayOptions] = useState(DAYS.map(d => ({ value: d, label: d }))); // Filtered day suggestions
-  const [isDaySuggestionsOpen, setIsDaySuggestionsOpen] = useState(false); // Day suggestions list visibility
 
   const [timeSearchTerm, setTimeSearchTerm] = useState(''); // Input value for time search
   const [filteredTimeOptions, setFilteredTimeOptions] = useState(TIME_SLOTS); // Filtered time suggestions
@@ -692,6 +708,8 @@ const MakeRoutinePage = () => {
   const [sectionSearchTerm, setSectionSearchTerm] = useState({});
   const [filteredSectionOptions, setFilteredSectionOptions] = useState({});
   const [isSectionSuggestionsOpen, setIsSectionSuggestionsOpen] = useState({});
+
+  const routineGridRef = useRef(null);
 
   // Function to handle PNG download
   const handleDownloadPNG = () => {
@@ -963,30 +981,34 @@ const MakeRoutinePage = () => {
     const value = event.target.value;
     setCourseSearchTerm(value);
 
-    if (value === '') {
-      // If input is cleared, show all courses that are not already selected
-      setFilteredCourseOptions(courseOptions.filter(option => !routineCourses.some(rc => rc.value === option.value)));
-    } else {
-      // Filter courses based on input value (case-insensitive) and exclude already selected ones
-      const filtered = courseOptions.filter(option =>
-        option.label.toLowerCase().includes(value.toLowerCase()) && !routineCourses.some(rc => rc.value === option.value)
-      );
-      setFilteredCourseOptions(filtered);
-    }
+    // Filter available courses based on search term
+    const filtered = availableCourses
+        .filter(course => 
+            course.code.toLowerCase().includes(value.toLowerCase()) &&
+            !routineCourses.some(selected => selected.value === course.code)
+        )
+        .map(course => ({
+            value: course.code,
+            label: course.code,
+            isDisabled: !course.sections?.some(section => section.availableSeats > 0)
+        }));
 
-    // Open suggestions if there is input or available options
-     setIsCourseSuggestionsOpen(true);
+    setFilteredCourseOptions(filtered);
+    setIsCourseSuggestionsOpen(value.length > 0 && filtered.length > 0);
   };
 
   // New handler for selecting a course from suggestions
   const handleCourseSuggestionSelect = async (option) => {
-    // Prevent adding if the course is disabled (no seats available)
-    if (option.isDisabled) {
-      // Optionally show a temporary message to the user
-      alert(`Cannot add ${option.label}: No seats available.`);
-      setCourseSearchTerm(''); // Clear input after attempted selection
-      setIsCourseSuggestionsOpen(false); // Close suggestions
-      return;
+    // Check if any section has available seats
+    const courseData = availableCourses.find(c => c.code === option.value);
+    const hasAvailableSection = courseData?.sections?.some(section => section.availableSeats > 0);
+    
+    // Prevent adding if no section has available seats
+    if (!hasAvailableSection) {
+        alert(`Cannot add ${option.label}: No seats available.`);
+        setCourseSearchTerm(''); // Clear input after attempted selection
+        setIsCourseSuggestionsOpen(false); // Close suggestions
+        return;
     }
 
     // Add the selected course to the routineCourses state if not already present
@@ -994,38 +1016,34 @@ const MakeRoutinePage = () => {
         const updatedCourses = [...routineCourses, option];
         setRoutineCourses(updatedCourses);
 
-        // *** Add faculty fetching logic here ***
         try {
             const res = await axios.get(`${API_BASE}/course_details?course=${option.value}`);
             const facultySections = {};
             res.data.forEach(section => {
-              if (section.faculties) {
-                const availableSeats = section.capacity - section.consumedSeat;
-                if (availableSeats > 0) {
-                  if (!facultySections[section.faculties]) {
-                    facultySections[section.faculties] = {
-                      sections: [],
-                      totalSeats: 0,
-                      availableSeats: 0
-                    };
-                  }
-                  facultySections[section.faculties].sections.push(section);
-                  facultySections[section.faculties].totalSeats += section.capacity;
-                  facultySections[section.faculties].availableSeats += availableSeats;
+                if (section.faculties) {
+                    const availableSeats = section.capacity - section.consumedSeat;
+                    if (availableSeats > 0) {
+                        if (!facultySections[section.faculties]) {
+                            facultySections[section.faculties] = {
+                                sections: [],
+                                totalSeats: 0,
+                                availableSeats: 0
+                            };
+                        }
+                        facultySections[section.faculties].sections.push(section);
+                        facultySections[section.faculties].totalSeats += section.capacity;
+                        facultySections[section.faculties].availableSeats += availableSeats;
+                    }
                 }
-              }
             });
             setAvailableFacultyByCourse(prev => ({ ...prev, [option.value]: facultySections }));
-          } catch (error) {
-              console.error(`Error fetching faculty for ${option.value}:`, error);
-          }
-        // *** End faculty fetching logic ***
-
+        } catch (error) {
+            console.error(`Error fetching faculty for ${option.value}:`, error);
+        }
     }
+
     setCourseSearchTerm(''); // Clear input after selection
-    // Update suggestions to exclude the newly selected course
-    setFilteredCourseOptions(prevOptions => prevOptions.filter(opt => opt.value !== option.value));
-    setIsCourseSuggestionsOpen(false); // Close suggestions after selection
+    setIsCourseSuggestionsOpen(false); // Close suggestions
   };
 
   // New handler for removing a course tag
