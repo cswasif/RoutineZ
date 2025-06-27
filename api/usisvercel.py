@@ -73,7 +73,7 @@ def check_ai_availability():
 @app.route("/api/connapi-status")
 def check_connapi_status():
     try:
-        response = requests.get("https://connectlive-nine.vercel.app/raw-schedule", timeout=30)
+        response = requests.get("https://usis-cdn.eniamza.com/connect.json", timeout=30)
         response.raise_for_status()  # This will raise an exception for HTTP errors
         data = response.json()
         
@@ -154,7 +154,7 @@ data = None
 
 def load_data():
     try:
-        DATA_URL = "https://connectlive-nine.vercel.app/raw-schedule"
+        DATA_URL = "https://usis-cdn.eniamza.com/connect.json"
         # print(f"\nLoading fresh data from {DATA_URL}...")
         
         # Add retry logic
